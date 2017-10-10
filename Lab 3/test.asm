@@ -1,0 +1,16 @@
+.ORIG x3000
+	AND R0, R0, #0
+	AND R0, R0, R0
+	ADD R0, R0, #-1
+	ADD R0, R0, #1
+	ADD R0, R0, R0
+	XOR R0, R0, #1
+	XOR R0, R0, R0
+	BRz A
+A	LEA R0, B
+	LDW R0, R0, #0
+	LEA R0, B
+	LDB R0, R0, #0
+	HALT
+B	.FILL x4000
+.END
