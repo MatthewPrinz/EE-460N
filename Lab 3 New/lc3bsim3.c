@@ -549,9 +549,23 @@ void eval_micro_sequencer() {
    * Evaluate the address of the next state according to the 
    * micro sequencer logic. Latch the next microinstruction.
    */
+  int next_state = 0;
+  int* curr_uinstr = CURRENT_LATCHES.MICROINSTRUCTION;
 
+  if (curr_uinstr[IRD] == 1) { /* If state 32, IRD is set and use 00 c                                                       oncat with IR[15:12] for instruction                                                       state. */
+    next_state = ((CURRENT_LATCHES.IR[15:12]) >> 12) 0x3F;
+  }
+  else {
+    next_state = curr_uinstr[J5] << 5;
+    next_state = curr_uinstr[J4] << 4;
+    next_state = curr_uinstr[J3] << 3;
+    next_state = curr_uinstr[J2] | (CURRENT_LATCHES.BEN & ~curr_uinstr[COND0] & curr_uinstr[COND1])                         << 2;
+    next_state = curr_uinstr[J1] | (CURRENT_LATCHES.READY & curr_uinstr[COND0] & ~curr_uinstr[COND1])                       << 1;
+    next_state = curr_uinstr[J0] | (CURRENT_LATCHES.IR[11] & curr_uinstr[COND0] & curr_uinstr[COND1]);
+  }
+
+  NEXT_LATCHES.MICROINSTRUCTION = CONTROL_STORE[next_state}; 
 }
-
 
 void cycle_memory() {
   /* 
