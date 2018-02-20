@@ -553,7 +553,7 @@ void eval_micro_sequencer() {
   int* curr_uinstr = CURRENT_LATCHES.MICROINSTRUCTION;
 
   if (curr_uinstr[IRD] == 1) { /* If state 32, IRD is set and use 00 c                                                       oncat with IR[15:12] for instruction                                                       state. */
-    next_state = ((CURRENT_LATCHES.IR[15:12]) >> 12) 0x3F;
+    next_state = ((CURRENT_LATCHES.IR & 0xF000) >> 12) & 0x3F;
   }
   else {
     next_state = curr_uinstr[J5] << 5;
@@ -561,10 +561,14 @@ void eval_micro_sequencer() {
     next_state = curr_uinstr[J3] << 3;
     next_state = curr_uinstr[J2] | (CURRENT_LATCHES.BEN & ~curr_uinstr[COND0] & curr_uinstr[COND1])                         << 2;
     next_state = curr_uinstr[J1] | (CURRENT_LATCHES.READY & curr_uinstr[COND0] & ~curr_uinstr[COND1])                       << 1;
-    next_state = curr_uinstr[J0] | (CURRENT_LATCHES.IR[11] & curr_uinstr[COND0] & curr_uinstr[COND1]);
+    next_state = curr_uinstr[J0] | (((CURRENT_LATCHES.IR & 0x0800) >> 11) & curr_uinstr[COND0] & curr_uinstr[COND1]);
   }
 
-  NEXT_LATCHES.MICROINSTRUCTION = CONTROL_STORE[next_state}; 
+  int i;
+
+  for (i = 0; i < CONTROL_STORE_BITS; i++){
+    NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[next_state][i];
+  }
 }
 
 void cycle_memory() {
