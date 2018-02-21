@@ -565,12 +565,12 @@ void eval_micro_sequencer() {
   }
 
   int i;
-
   for (i = 0; i < CONTROL_STORE_BITS; i++){
     NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[next_state][i];
   }
 }
 
+int mem_cycle_cnt = 0;
 void cycle_memory() {
   /* 
    * This function emulates memory and the WE logic. 
@@ -578,10 +578,36 @@ void cycle_memory() {
    * If fourth, we need to latch Ready bit at the end of 
    * cycle to prepare microsequencer for the fifth cycle.  
    */
-
+  /* Check if memory is enabled for this microinstruction. */
+  if(CURRENT_LATCHES.MICROINSTRUCTION[MIO_EN] == 1) {
+    /* Check if 5th cycle or right before set ready. */
+    mem_cycle_cnt++;
+    if(mem_cycle_cnt == 4) NEXT_LATCHES.READY = 1;
+    if(mem_cycle_cnt == 5) {
+       mem_cycle_cnt =  0;
+       /* Check if read or write. */
+       if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
+         NEXT_LATCHES.MDR =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
+         NEXT_LATCHES.MDR = (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
+       }
+       else {                                           /* Write */
+         if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
+           if(CURRENT_LATCHES.MAR % 2 == 0) { /* Even address. */
+             MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+           }
+           else {
+             MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
+           }
+         }
+         else {                                                 /* Word */
+           MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+           MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
+         }
+       }
+    }
+  }
+  else return;
 }
-
-
 
 void eval_bus_drivers() {
   /* 
@@ -596,9 +622,7 @@ void eval_bus_drivers() {
 
 }
 
-
 void drive_bus() {
-
   /* 
    * Datapath routine for driving the bus from one of the 5 possible 
    * tristate drivers. 
