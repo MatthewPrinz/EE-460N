@@ -556,18 +556,20 @@ void eval_micro_sequencer() {
     next_state = ((CURRENT_LATCHES.IR & 0xF000) >> 12) & 0x3F;
   }
   else {
-    next_state = curr_uinstr[J5] << 5;
-    next_state = curr_uinstr[J4] << 4;
-    next_state = curr_uinstr[J3] << 3;
-    next_state = curr_uinstr[J2] | (CURRENT_LATCHES.BEN & ~curr_uinstr[COND0] & curr_uinstr[COND1])                         << 2;
-    next_state = curr_uinstr[J1] | (CURRENT_LATCHES.READY & curr_uinstr[COND0] & ~curr_uinstr[COND1])                       << 1;
-    next_state = curr_uinstr[J0] | (((CURRENT_LATCHES.IR & 0x0800) >> 11) & curr_uinstr[COND0] & curr_uinstr[COND1]);
+    next_state |=  curr_uinstr[J5] << 5;
+    next_state |=  curr_uinstr[J4] << 4;
+    next_state |=  curr_uinstr[J3] << 3;
+    next_state |= (curr_uinstr[J2] | (CURRENT_LATCHES.BEN & ~curr_uinstr[COND0] & curr_uinstr[COND1]))                        << 2;
+    next_state |= (curr_uinstr[J1] | (CURRENT_LATCHES.READY & curr_uinstr[COND0] & ~curr_uinstr[COND1]))                      << 1;
+    next_state |= curr_uinstr[J0] | (((CURRENT_LATCHES.IR & 0x0800) >> 11) & curr_uinstr[COND0] & curr_uinstr[COND1]);
   }
 
   int i;
   for (i = 0; i < CONTROL_STORE_BITS; i++){
     NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[next_state][i];
   }
+
+  NEXT_LATCHES.STATE_NUMBER = next_state;
 }
 
 int mem_cycle_cnt = 0;
@@ -582,28 +584,35 @@ void cycle_memory() {
   if(CURRENT_LATCHES.MICROINSTRUCTION[MIO_EN] == 1) {
     /* Check if 5th cycle or right before set ready. */
     mem_cycle_cnt++;
-    if(mem_cycle_cnt == 4) NEXT_LATCHES.READY = 1;
-    if(mem_cycle_cnt == 5) {
-       mem_cycle_cnt =  0;
-       /* Check if read or write. */
-       if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
-         NEXT_LATCHES.MDR =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
-         NEXT_LATCHES.MDR = (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
-       }
-       else {                                           /* Write */
-         if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
-           if(CURRENT_LATCHES.MAR % 2 == 0) { /* Even address. */
-             MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
-           }
-           else {
+    NEXT_LATCHES.READY = 0;
+
+    if(mem_cycle_cnt == 4) {
+      printf("5th memory cycle.\n");
+      /* Check if read or write. */
+      if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
+        NEXT_LATCHES.MDR  =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
+        NEXT_LATCHES.MDR |= (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
+        printf("Performed memory read.\n");
+        printf("MDR = %d\n", NEXT_LATCHES.MDR);
+      }
+      else {                                           /* Write */
+        if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
+          if(CURRENT_LATCHES.MAR % 2 == 0) { /* Even address. */
+            MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+          }
+          else {
              MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
-           }
-         }
-         else {                                                 /* Word */
-           MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
-           MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
-         }
-       }
+          }
+        }
+        else {                                                 /* Word */
+          MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+          MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
+        }
+      }
+      NEXT_LATCHES.READY = 1;
+    }
+    if(mem_cycle_cnt == 5) {
+      mem_cycle_cnt = 0;
     }
   }
   else return;
@@ -750,7 +759,7 @@ void latch_datapath_values() {
     NEXT_LATCHES.MAR = BUS;
   }
   if (curr_uinstr[LD_MDR] == 1) {
-    if (curr_uinstr[MIO_EN] == 1) {
+    if (curr_uinstr[MIO_EN] == 0) {
       if (curr_uinstr[DATA_SIZE] == 0) {
         if ((CURRENT_LATCHES.MAR % 2) == 0){
           NEXT_LATCHES.MDR =  BUS & 0x00FF;
