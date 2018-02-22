@@ -609,6 +609,36 @@ void cycle_memory() {
   else return;
 }
 
+int sign_ext_5bit(int val){
+  if((val & 0x10) == 0x10) return val | 0xFFE0;
+  else                     return val;
+}
+
+int sign_ext_6bit(int val){
+  if((val & 0x20) == 0x20) return val | 0xFFC0;
+  else                     return val;
+}
+
+int sign_ext_8bit(int val){
+  if((val & 0x80) == 0x80) return val | 0xFF00;
+  else                     return val;
+}
+
+int sign_ext_9bit(int val){
+  if((val & 0x100) == 0x100) return val | 0xFE00;
+  else                       return val;
+}
+
+int sign_ext_11bit(int val){
+  if((val & 0x400) == 0x400) return val | 0xF800;
+  else                       return val;
+}
+
+int Gate_MARMUX = 0;
+int Gate_PC     = 0;
+int Gate_ALU    = 0;
+int Gate_SHF    = 0;
+int Gate_MDR    = 0;
 void eval_bus_drivers() {
   /* 
    * Datapath routine emulating operations before driving the bus.
@@ -619,7 +649,78 @@ void eval_bus_drivers() {
    *		 Gate_SHF,
    *		 Gate_MDR.
    */    
+  if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended IR7:0 */
+    Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
+  }
+  else {
+    int addr1mux   = 0;
+    if(CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX] == 0) addr1mux = CURRENT_LATCHES.PC;
+    else {
+      int BaseR = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
+      BaseR = CURRENT_LATCHES.REGS[BaseR];
+      addr1mux = BaseR;
+    }
+    int addr2mux   = 0;
+    int addr2mux0  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX0];
+    int addr2mux1  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX1];
+    int curr_instr = CURRENT_LATCHES.IR;
+    if((addr2mux1 == 0) && (addr2mux0 == 0)) addr2mux = 0;
+    if((addr2mux1 == 0) && (addr2mux0 == 1)) addr2mux = sign_ext_6bit( curr_instr & 0x3F);
+    if((addr2mux1 == 1) && (addr2mux0 == 0)) addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
+    if((addr2mux1 == 1) && (addr2mux0 == 1)) addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
+    int lshf1 = addr2mux << 1;
+    int adder = lshf1 + addr1mux;
+    Gate_MARMUX = adder;
+  }
 
+  Gate_PC = CURRENT_LATCHES.PC;
+
+  int sr1 = 0;
+  if(CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX] == 0)
+    sr1 = (CURRENT_LATCHES.IR & 0xE00) >> 9;
+  else
+    sr1 = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
+  sr1  = CURRENT_LATCHES.REGS[sr1];
+
+  int sr2 = 0;
+  if((CURRENT_LATCHES.IR & 0x20) == 0x20){
+    sr2 = sign_ext_5bit(CURRENT_LATCHES.IR & 0x1F);
+  }
+  else {
+    sr2 = CURRENT_LATCHES.IR & 0x7;
+    sr2 = CURRENT_LATCHES.REGS[sr2];
+  }
+  int aluk0 = CURRENT_LATCHES.MICROINSTRUCTION[ALUK0];
+  int aluk1 = CURRENT_LATCHES.MICROINSTRUCTION[ALUK1];
+  int alu_result = 0;
+       if((aluk1 == 0) && (aluk0 == 0)) alu_result = (sr1 + sr2) & 0xFFFF;
+  else if((aluk1 == 0) && (aluk0 == 1)) alu_result = (sr1 & sr2) & 0xFFFF;
+  else if((aluk1 == 1) && (aluk0 == 0)) alu_result = (sr1 ^ sr2) & 0xFFFF;
+  else if((aluk1 == 1) && (aluk0 == 1)) alu_result = (sr1)       & 0xFFFF;
+  Gate_ALU = alu_result;
+
+  if((CURRENT_LATCHES.IR & 0x0010) == 0){
+    Gate_SHF = sr1 << (CURRENT_LATCHES.IR & 0x000F);
+  }
+  else {
+    if((CURRENT_LATCHES.IR & 0x0020) == 0){
+      Gate_SHF =   sr1 >> (CURRENT_LATCHES.IR & 0x000F);
+    }
+    else {
+      Gate_SHF = ((sr1 >> (CURRENT_LATCHES.IR & 0x000F)) | (sr1 & 0x8000));
+    }
+  }
+  if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) {
+    if((CURRENT_LATCHES.MAR % 2) == 0){
+      Gate_MDR = sign_ext_8bit(CURRENT_LATCHES.MDR & 0x00FF);
+    }
+    else { 
+      Gate_MDR = sign_ext_8bit(CURRENT_LATCHES.MDR & 0xFF00 >> 8);
+    }
+  }
+  else {
+    Gate_MDR = CURRENT_LATCHES.MDR;
+  }
 }
 
 void drive_bus() {
@@ -627,7 +728,11 @@ void drive_bus() {
    * Datapath routine for driving the bus from one of the 5 possible 
    * tristate drivers. 
    */       
-
+       if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX]   == 1) BUS = Gate_MARMUX;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PC]  == 1) BUS = Gate_PC;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU] == 1) BUS = Gate_ALU;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF] == 1) BUS = Gate_SHF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MDR] == 1) BUS = Gate_MDR;
 }
 
 
