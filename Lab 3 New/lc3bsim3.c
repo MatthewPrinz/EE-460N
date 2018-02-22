@@ -639,6 +639,8 @@ int Gate_PC     = 0;
 int Gate_ALU    = 0;
 int Gate_SHF    = 0;
 int Gate_MDR    = 0;
+int adder       = 0;
+
 void eval_bus_drivers() {
   /* 
    * Datapath routine emulating operations before driving the bus.
@@ -669,7 +671,7 @@ void eval_bus_drivers() {
     if((addr2mux1 == 1) && (addr2mux0 == 0)) addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
     if((addr2mux1 == 1) && (addr2mux0 == 1)) addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
     int lshf1 = addr2mux << 1;
-    int adder = lshf1 + addr1mux;
+    adder = lshf1 + addr1mux;
     Gate_MARMUX = adder;
   }
 
@@ -743,6 +745,82 @@ void latch_datapath_values() {
    * require sourcing the bus; therefore, this routine has to come 
    * after drive_bus.
    */
+  int* curr_uinstr = CURRENT_LATCHES.MICROINSTRUCTION;
+  if (curr_uinstr[LD_MAR] == 1) {
+    NEXT_LATCHES.MAR = BUS;
+  }
+  if (curr_uinstr[LD_MDR] == 1) {
+    if (curr_uinstr[MIO_EN] == 1) {
+      if (curr_uinstr[DATA_SIZE] == 0) {
+        if ((CURRENT_LATCHES.MAR % 2) == 0){
+          NEXT_LATCHES.MDR =  BUS & 0x00FF;
+        }
+        else {
+          NEXT_LATCHES.MDR = (BUS & 0x00FF) << 8;
+        }
+      }
+      else {
+        NEXT_LATCHES.MDR = BUS;
+      }
+    }
+  }
 
+  if (curr_uinstr[LD_IR] == 1) {
+    NEXT_LATCHES.IR = BUS;
+  }
+
+  int curr_instr = CURRENT_LATCHES.IR;
+
+  if (curr_uinstr[LD_BEN] == 1) {
+    int ir11 = (curr_instr & 0x0800) >> 11;
+    int ir10 = (curr_instr & 0x0400) >> 10;
+    int ir9  = (curr_instr & 0x0200) >> 9;
+    int n = CURRENT_LATCHES.N;
+    int z = CURRENT_LATCHES.Z;
+    int p = CURRENT_LATCHES.P;
+    
+    NEXT_LATCHES.BEN = ((ir11 & n) | (ir10 & z) | (ir9 & p));
+  }
+
+  if (curr_uinstr[LD_REG] == 1) {
+    if (curr_uinstr[DRMUX] == 0) {
+      int dr = (curr_instr & 0x0E00) >> 9;
+      NEXT_LATCHES.REGS[dr] = BUS;
+    }
+    else {
+      NEXT_LATCHES.REGS[7] = BUS;
+    }
+  }
+
+  if (curr_uinstr[LD_CC] == 1){
+    NEXT_LATCHES.N = 0;
+    NEXT_LATCHES.Z = 0;
+    NEXT_LATCHES.P = 0;
+
+    if ((BUS & 0x8000) == 0x8000){
+      NEXT_LATCHES.N = 1;
+    }
+    else if (BUS == 0) {
+      NEXT_LATCHES.Z = 1;
+    }
+    else {
+      NEXT_LATCHES.P = 1;
+    }
+  }
+
+  if (curr_uinstr[LD_PC] == 1){
+    int pcmux0 = curr_uinstr[PCMUX0];
+    int pcmux1 = curr_uinstr[PCMUX1];
+    
+    if ((pcmux1 == 0) && (pcmux0 == 0)){
+      NEXT_LATCHES.PC = CURRENT_LATCHES.PC + 2;
+    }
+    else if ((pcmux1 == 0) && (pcmux0 == 1)){
+      NEXT_LATCHES.PC = BUS;
+    }
+    else {
+      NEXT_LATCHES.PC = adder;
+    }
+  }
 }
 
