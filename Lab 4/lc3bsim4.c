@@ -74,6 +74,11 @@ enum CS_BITS {
     GATE_PSR,
     LD_USP,
     SR1MUX2,
+    SUPERV_EN,
+    DRMUX2,
+    GATE_SSP,
+    DEC,
+    GATE_OLD_PSR,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -663,13 +668,15 @@ int sign_ext_11bit(int val){
   else                       return val;
 }
 
-int Gate_MARMUX = 0;
-int Gate_PC     = 0;
-int Gate_ALU    = 0;
-int Gate_SHF    = 0;
-int Gate_MDR    = 0;
-int adder       = 0;
-int Gate_PSR    = 0;
+int Gate_MARMUX  = 0;
+int Gate_PC      = 0;
+int Gate_ALU     = 0;
+int Gate_SHF     = 0;
+int Gate_MDR     = 0;
+int adder        = 0;
+int Gate_PSR     = 0;
+int Gate_SSP     = 0;
+int Gate_OLD_PSR = 0;
 
 void eval_bus_drivers() {
 /* 
@@ -680,7 +687,9 @@ void eval_bus_drivers() {
  **		 Gate_ALU,
  **		 Gate_SHF,
  **		 Gate_MDR,
- **              Gate_PSR.
+ **              Gate_PSR,
+ **              Gate_SSP,
+ **              Gate_OLD_PSR.
  **/    
   if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended IR7:0 */
     Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
@@ -721,7 +730,10 @@ void eval_bus_drivers() {
   sr1  = CURRENT_LATCHES.REGS[sr1];
 
   int sr2 = 0;
-  if((CURRENT_LATCHES.IR & 0x20) == 0x20){
+  if (CURRENT_LATCHES.MICROINSTRUCTION[DEC] == 1){
+    sr2 = -2;
+  }
+  else if((CURRENT_LATCHES.IR & 0x20) == 0x20){
     sr2 = sign_ext_5bit(CURRENT_LATCHES.IR & 0x1F);
   }
   else {
@@ -760,7 +772,9 @@ void eval_bus_drivers() {
     Gate_MDR = CURRENT_LATCHES.MDR;
   }
 
-  Gate_PSR = CURRENT_LATCHES.PSR;
+  Gate_PSR     = CURRENT_LATCHES.PSR;
+  Gate_SSP     = CURRENT_LATCHES.SSP;
+  Gate_OLD_PSR = CURRENT_LATCHES.OLD_PSR;
 }
 
 void drive_bus() {
@@ -768,12 +782,14 @@ void drive_bus() {
  ** Datapath routine for driving the bus from one of the 5 possible 
  ** tristate drivers. 
  **/       
-       if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX]   == 1) BUS = Gate_MARMUX;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PC]  == 1) BUS = Gate_PC;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU] == 1) BUS = Gate_ALU;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF] == 1) BUS = Gate_SHF;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MDR] == 1) BUS = Gate_MDR;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR] == 1) BUS = Gate_PSR;
+       if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX]       == 1) BUS = Gate_MARMUX;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PC]      == 1) BUS = Gate_PC;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU]     == 1) BUS = Gate_ALU;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF]     == 1) BUS = Gate_SHF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MDR]     == 1) BUS = Gate_MDR;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR]     == 1) BUS = Gate_PSR;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SSP]     == 1) BUS = Gate_SSP;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_OLD_PSR] == 1) BUS = Gate_OLD_PSR;
 }
 
 void latch_datapath_values() {
@@ -784,9 +800,10 @@ void latch_datapath_values() {
  ** after drive_bus.
  **/
   int* curr_uinstr = CURRENT_LATCHES.MICROINSTRUCTION;
-  if (curr_uinstr[LD_MAR] == 1) {
+
+  if (curr_uinstr[LD_MAR] == 1)
     NEXT_LATCHES.MAR = BUS;
-  }
+
   if (curr_uinstr[LD_MDR] == 1) {
     if (curr_uinstr[MIO_EN] == 0) {
       if (curr_uinstr[DATA_SIZE] == 0) {
@@ -821,12 +838,15 @@ void latch_datapath_values() {
   }
 
   if (curr_uinstr[LD_REG] == 1) {
-    if (curr_uinstr[DRMUX] == 0) {
+    if      ((curr_uinstr[DRMUX] == 0) && (curr_uinstr[DRMUX2] == 0)) {
       int dr = (curr_instr & 0x0E00) >> 9;
       NEXT_LATCHES.REGS[dr] = BUS;
     }
+    else if ((curr_uinstr[DRMUX] == 1) && (curr_uinstr[DRMUX2] == 0)){
+      NEXT_LATCHES.REGS[7]  = BUS;
+    }
     else {
-      NEXT_LATCHES.REGS[7] = BUS;
+      NEXT_LATCHES.REGS[6]  = BUS;
     }
   }
 
