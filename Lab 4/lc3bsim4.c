@@ -70,6 +70,10 @@ enum CS_BITS {
     DATA_SIZE,
     LSHF1,
 /* MODIFY: you have to add all your new control signals */
+    LD_OLD_PSR,
+    GATE_PSR,
+    LD_USP,
+    SR1MUX2,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -665,6 +669,7 @@ int Gate_ALU    = 0;
 int Gate_SHF    = 0;
 int Gate_MDR    = 0;
 int adder       = 0;
+int Gate_PSR    = 0;
 
 void eval_bus_drivers() {
 /* 
@@ -674,7 +679,8 @@ void eval_bus_drivers() {
  **		 Gate_PC,
  **		 Gate_ALU,
  **		 Gate_SHF,
- **		 Gate_MDR.
+ **		 Gate_MDR,
+ **              Gate_PSR.
  **/    
   if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended IR7:0 */
     Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
@@ -703,10 +709,15 @@ void eval_bus_drivers() {
   Gate_PC = CURRENT_LATCHES.PC;
 
   int sr1 = 0;
-  if(CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX] == 0)
+  if      ((CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX] == 0) 
+         && CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX2]== 0)
     sr1 = (CURRENT_LATCHES.IR & 0xE00) >> 9;
-  else
+  else if ((CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX] == 1)
+        && (CURRENT_LATCHES.MICROINSTRUCTION[SR1MUX2]== 0))
     sr1 = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
+  else 
+    sr1 = 6;
+
   sr1  = CURRENT_LATCHES.REGS[sr1];
 
   int sr2 = 0;
@@ -748,6 +759,8 @@ void eval_bus_drivers() {
   else {
     Gate_MDR = CURRENT_LATCHES.MDR;
   }
+
+  Gate_PSR = CURRENT_LATCHES.PSR;
 }
 
 void drive_bus() {
@@ -760,8 +773,8 @@ void drive_bus() {
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU] == 1) BUS = Gate_ALU;
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF] == 1) BUS = Gate_SHF;
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MDR] == 1) BUS = Gate_MDR;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR] == 1) BUS = Gate_PSR;
 }
-
 
 void latch_datapath_values() {
 /* 
@@ -847,5 +860,11 @@ void latch_datapath_values() {
       NEXT_LATCHES.PC = adder;
     }
   }
+
+  if (curr_uinstr[LD_OLD_PSR] == 1)
+    NEXT_LATCHES.OLD_PSR = BUS;
+
+  if (curr_uinstr[LD_USP] == 1)
+    NEXT_LATCHES.USP = BUS;
 }
 
