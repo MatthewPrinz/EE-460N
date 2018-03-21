@@ -3,7 +3,6 @@
 /*   EE 460N                                                   */
 /*   The University of Texas at Austin                         */
 /***************************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,10 +11,8 @@
 /* Files:  ucode        Microprogram file                      */
 /*         isaprogram   LC-3b machine language program file    */
 /***************************************************************/
-/***************************************************************/
 /* These are the functions you'll have to write.               */
 /***************************************************************/
-
 void eval_micro_sequencer();
 void cycle_memory();
 void eval_bus_drivers();
@@ -69,7 +66,7 @@ enum CS_BITS {
     R_W,
     DATA_SIZE,
     LSHF1,
-/* MODIFY: you have to add all your new control signals */
+/* MODIFY: you have to add all your new control signals. */
     LD_OLD_PSR,
     GATE_PSR,
     LD_USP,
@@ -79,6 +76,8 @@ enum CS_BITS {
     GATE_SSP,
     DEC,
     GATE_OLD_PSR,
+    ADDR2MUX2,
+    ADDR1MUX2,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -691,26 +690,46 @@ void eval_bus_drivers() {
  **              Gate_SSP,
  **              Gate_OLD_PSR.
  **/    
-  if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended IR7:0 */
+  if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended 
+                                                         IR7:0 */
     Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
   }
   else {
     int addr1mux   = 0;
-    if(CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX] == 0) addr1mux = CURRENT_LATCHES.PC;
-    else {
+
+    if     ((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 0)
+         && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0))
+      addr1mux = CURRENT_LATCHES.PC;
+    else if((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 1)
+         && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0)){
       int BaseR = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
       BaseR = CURRENT_LATCHES.REGS[BaseR];
       addr1mux = BaseR;
     }
+    else {
+      addr1mux = 0x200;
+    }
+
     int addr2mux   = 0;
     int addr2mux0  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX0];
     int addr2mux1  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX1];
+    int addr2mux2  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX2];
     int curr_instr = CURRENT_LATCHES.IR;
-    if((addr2mux1 == 0) && (addr2mux0 == 0)) addr2mux = 0;
-    if((addr2mux1 == 0) && (addr2mux0 == 1)) addr2mux = sign_ext_6bit( curr_instr & 0x3F);
-    if((addr2mux1 == 1) && (addr2mux0 == 0)) addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
-    if((addr2mux1 == 1) && (addr2mux0 == 1)) addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
-    int lshf1 = addr2mux << 1;
+    if     ((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 0)) 
+      addr2mux = 0;
+    else if((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 1)) 
+      addr2mux = sign_ext_6bit( curr_instr & 0x3F);
+    else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 0)) 
+      addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
+    else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 1)) 
+      addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
+    else
+      addr2mux = CURRENT_LATCHES.INTV;
+
+    int lshf1 = addr2mux;
+    if (CURRENT_LATCHES.MICROINSTRUCTION[LSHF1] == 1)
+      lshf1 = lshf1 << 1;
+
     adder = lshf1 + addr1mux;
     Gate_MARMUX = adder;
   }
@@ -820,9 +839,8 @@ void latch_datapath_values() {
     }
   }
 
-  if (curr_uinstr[LD_IR] == 1) {
+  if (curr_uinstr[LD_IR] == 1)
     NEXT_LATCHES.IR = BUS;
-  }
 
   int curr_instr = CURRENT_LATCHES.IR;
 
