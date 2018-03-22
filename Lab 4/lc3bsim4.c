@@ -175,6 +175,7 @@ int INT;    /* Interrupt indicator. */
 int PSR;    /* Program Status Register. */
 int OLD_PSR;/* The old PSR that needs to be saved on the SSP before context switch. */
 int USP;    /* Holds the USP while the processor is in supervisor mode. */
+int EXC;    /* Exception indicator. */
 /*******************************************************************************/
 } System_Latches;
 
@@ -509,6 +510,7 @@ void initialize(char *ucode_filename, char *program_filename, int num_prog_files
 
 /************************************************************************************/
     CURRENT_LATCHES.PSR = 0x8002; /* Initialize PSR to user mode and set the Z bit. */
+    CURRENT_LATCHES.USP = 0xFE00; /* Initialize the user stack pointer. */
 /************************************************************************************/
 
     NEXT_LATCHES = CURRENT_LATCHES;
@@ -571,11 +573,18 @@ void eval_micro_sequencer() {
  ** micro sequencer logic. Latch the next microinstruction.
  **/
   int next_state = 0;
-  if (CURRENT_LATCHES.INT == 0) { /* Check for interrupt. */
+  if ((CURRENT_LATCHES.INT == 0) && (CURRENT_LATCHES.EXC == 0)) { /* Check for interrupt. 
+                                                                     and exception. */
     int* curr_uinstr = CURRENT_LATCHES.MICROINSTRUCTION;
     if (curr_uinstr[IRD] == 1) {  /* If state 32, IRD is set and use 00 concat 
                                      with IR[15:12] for instruction state. */
       next_state = ((CURRENT_LATCHES.IR & 0xF000) >> 12) & 0x3F;
+      /* Check for unknown opcode exception (ops 10 and 11). */
+      if ((next_state == 10) || (next_state == 11)){
+        NEXT_LATCHES.EXC  = 1;
+        NEXT_LATCHES.EXCV = 0x4;
+        return;
+      }
     }
     else {
       next_state |=  curr_uinstr[J5] << 5;
@@ -612,37 +621,49 @@ void cycle_memory() {
  **/
   /* Check if memory is enabled for this microinstruction. */
   if(CURRENT_LATCHES.MICROINSTRUCTION[MIO_EN] == 1) {
-    /* Check if 5th cycle or right before set ready. */
-    mem_cycle_cnt++;
-    NEXT_LATCHES.READY = 0;
-
-    if(mem_cycle_cnt == 4) {
-      printf("5th memory cycle.\n");
-      /* Check if read or write. */
-      if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
-        NEXT_LATCHES.MDR  =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
-        NEXT_LATCHES.MDR |= (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
-        printf("Performed memory read.\n");
-        printf("MDR = %d\n", NEXT_LATCHES.MDR);
-      }
-      else {                                           /* Write */
-        if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
-          if(CURRENT_LATCHES.MAR % 2 == 0) { /* Even address. */
-            MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
-          }
-          else {
-             MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
-          }
-        }
-        else {                                                 /* Word */
-          MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
-          MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
-        }
-      }
-      NEXT_LATCHES.READY = 1;
+    /* Check for protection exception. */
+    if (((CURRENT_LATCHES.PSR & 0x8000) == 0x8000) && (CURRENT_LATCHES.MAR < 0x2FFF)){
+      NEXT_LATCHES.EXC  = 1;
+      NEXT_LATCHES.EXCV = 0x2;
     }
-    if(mem_cycle_cnt == 5) {
-      mem_cycle_cnt = 0;
+    /* Check for unaligned access exception. */
+    else if ((CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 1) 
+         && ((CURRENT_LATCHES.MAR % 2) != 0)){
+      NEXT_LATCHES.EXC  = 1;
+      NEXT_LATCHES.EXCV = 0x3;
+    }
+    else {
+      /* Check if 5th cycle or right before set ready. */
+      mem_cycle_cnt++;
+      NEXT_LATCHES.READY = 0;
+
+      if(mem_cycle_cnt == 4){
+        printf("5th memory cycle.\n");
+        /* Check if read or write. */
+        if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
+          NEXT_LATCHES.MDR  =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
+          NEXT_LATCHES.MDR |= (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
+          printf("Performed memory read.\n");
+          printf("MDR = %d\n", NEXT_LATCHES.MDR);
+        }
+        else {                                           /* Write */
+          if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
+            if(CURRENT_LATCHES.MAR % 2 == 0) { /* Even address. */
+              MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+            }
+            else {
+              MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
+            }
+          }
+          else {                                                 /* Word */
+            MEMORY[CURRENT_LATCHES.MAR / 2][0] =  CURRENT_LATCHES.MDR & 0x00ff;
+            MEMORY[CURRENT_LATCHES.MAR / 2][1] = (CURRENT_LATCHES.MDR & 0xff00) >> 8;
+          }
+        }
+        NEXT_LATCHES.READY = 1;
+      }
+      else if(mem_cycle_cnt == 5)
+        mem_cycle_cnt = 0;
     }
   }
   else return;
@@ -731,6 +752,10 @@ void eval_bus_drivers() {
       addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
     else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 1)) 
       addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
+    else if (CURRENT_LATCHES.EXC == 1){
+      addr2mux = CURRENT_LATCHES.EXCV;
+      NEXT_LATCHES.EXC = 0;
+    }
     else
       addr2mux = CURRENT_LATCHES.INTV;
 
@@ -883,17 +908,23 @@ void latch_datapath_values() {
 
   if (curr_uinstr[LD_CC] == 1){
     NEXT_LATCHES.N = 0;
+    NEXT_LATCHES.PSR &= ~0x4;
     NEXT_LATCHES.Z = 0;
+    NEXT_LATCHES.PSR &= ~0x2;
     NEXT_LATCHES.P = 0;
+    NEXT_LATCHES.PSR &= ~0x1;
 
     if ((BUS & 0x8000) == 0x8000){
       NEXT_LATCHES.N = 1;
+      NEXT_LATCHES.PSR |= 0x4;
     }
     else if (BUS == 0) {
       NEXT_LATCHES.Z = 1;
+      NEXT_LATCHES.PSR |= 0x2;
     }
     else {
       NEXT_LATCHES.P = 1;
+      NEXT_LATCHES.PSR |= 0x1;
     }
   }
 
@@ -917,6 +948,9 @@ void latch_datapath_values() {
 
   if (curr_uinstr[LD_USP] == 1)
     NEXT_LATCHES.USP = BUS;
+
+  if (curr_uinstr[SUPERV_EN] == 1)
+    NEXT_LATCHES.PSR &= ~0x8000;
 
   if (curr_uinstr[PRIV_CHK] == 1)
     if ((CURRENT_LATCHES.PSR & 0x8000) == 0x8000)
