@@ -78,6 +78,12 @@ enum CS_BITS {
     GATE_OLD_PSR,
     ADDR2MUX2,
     ADDR1MUX2,
+    PRIV_CHK,
+    INC,
+    LD_SSP,
+    GATE_USP,
+    LD_PSR,
+    REST_CC,
     CONTROL_STORE_BITS
 } CS_BITS;
 
@@ -676,6 +682,7 @@ int adder        = 0;
 int Gate_PSR     = 0;
 int Gate_SSP     = 0;
 int Gate_OLD_PSR = 0;
+int Gate_USP     = 0;
 
 void eval_bus_drivers() {
 /* 
@@ -688,7 +695,8 @@ void eval_bus_drivers() {
  **		 Gate_MDR,
  **              Gate_PSR,
  **              Gate_SSP,
- **              Gate_OLD_PSR.
+ **              Gate_OLD_PSR,
+ **              Gate_USP.
  **/    
   if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended 
                                                          IR7:0 */
@@ -749,8 +757,11 @@ void eval_bus_drivers() {
   sr1  = CURRENT_LATCHES.REGS[sr1];
 
   int sr2 = 0;
-  if (CURRENT_LATCHES.MICROINSTRUCTION[DEC] == 1){
+  if      (CURRENT_LATCHES.MICROINSTRUCTION[DEC] == 1){
     sr2 = -2;
+  }
+  else if (CURRENT_LATCHES.MICROINSTRUCTION[INC] == 1){
+    sr2 = 2;
   }
   else if((CURRENT_LATCHES.IR & 0x20) == 0x20){
     sr2 = sign_ext_5bit(CURRENT_LATCHES.IR & 0x1F);
@@ -794,6 +805,7 @@ void eval_bus_drivers() {
   Gate_PSR     = CURRENT_LATCHES.PSR;
   Gate_SSP     = CURRENT_LATCHES.SSP;
   Gate_OLD_PSR = CURRENT_LATCHES.OLD_PSR;
+  Gate_USP     = CURRENT_LATCHES.USP;
 }
 
 void drive_bus() {
@@ -809,6 +821,7 @@ void drive_bus() {
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR]     == 1) BUS = Gate_PSR;
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SSP]     == 1) BUS = Gate_SSP;
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_OLD_PSR] == 1) BUS = Gate_OLD_PSR;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_USP]     == 1) BUS = Gate_USP;
 }
 
 void latch_datapath_values() {
@@ -904,5 +917,21 @@ void latch_datapath_values() {
 
   if (curr_uinstr[LD_USP] == 1)
     NEXT_LATCHES.USP = BUS;
+
+  if (curr_uinstr[PRIV_CHK] == 1)
+    if ((CURRENT_LATCHES.PSR & 0x8000) == 0x8000)
+      exit(0);
+
+  if (curr_uinstr[LD_SSP] == 1)
+    NEXT_LATCHES.SSP = BUS;
+
+  if (curr_uinstr[LD_PSR] == 1)
+    NEXT_LATCHES.PSR = BUS;
+
+  if (curr_uinstr[REST_CC] == 1){
+    NEXT_LATCHES.N = (NEXT_LATCHES.PSR & 0x4) >> 2;
+    NEXT_LATCHES.Z = (NEXT_LATCHES.PSR & 0x2) >> 1;
+    NEXT_LATCHES.P =  NEXT_LATCHES.PSR & 0x1;
+  }
 }
 
