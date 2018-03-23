@@ -1,7 +1,8 @@
-/* A file holding an LC-3b user program that will be loaded into memory starting at memory  * location x3000.
- */
+; A file holding an LC-3b user program that will be loaded into memory starting at memory 
+; location x3000.
+
       .ORIG x3000
-      LEA R0, PNTR
+      LEA R0, PNTR1
       LDW R0, R0, #0 ; R0 is pointer to x4000 location.
       AND R1, R1, #0
       ADD R1, R1, #1
@@ -12,7 +13,8 @@
       LDW R0, R0, #0 ; R0 is pointer (xC000). 
       AND R1, R1, #0 ; R1 is the sum of the locations. 
       AND R2, R2, #0 
-      ADD R2, R2, #20; R2 is the counter. 
+      ADD R2, R2, #15; R2 is the counter. 
+      ADD R2, R2, #5
 
 LOOP  LDB R3, R0, #0 ; R3 is the value from the current location. 
       ADD R1, R1, R3
