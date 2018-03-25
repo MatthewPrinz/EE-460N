@@ -583,7 +583,7 @@ void eval_micro_sequencer() {
     if (curr_uinstr[IRD] == 1) {  /* If state 32, IRD is set and use 00 concat 
                                      with IR[15:12] for instruction state. */
       next_state = ((CURRENT_LATCHES.IR & 0xF000) >> 12) & 0x3F;
-      printf("Starting instruction execution. Next sate = %d\n", next_state);
+      /*printf("Starting instruction execution. Next sate = %d\n", next_state);*/
       /* Check for unknown opcode exception (ops 10 and 11). */
       if ((next_state == 10) || (next_state == 11)){
         printf("Generating unknown opcode exeption...\n");
@@ -602,14 +602,15 @@ void eval_micro_sequencer() {
                     ~curr_uinstr[COND1])) << 1;
       next_state |=  curr_uinstr[J0] | (((CURRENT_LATCHES.IR & 0x0800) >> 11) & 
                      curr_uinstr[COND0] & curr_uinstr[COND1]);
-      if((CURRENT_LATCHES.BEN == 1) && (curr_uinstr[COND1] == 1))
-        printf("Branch being taken.\n");
+      /*if((CURRENT_LATCHES.BEN == 1) && (curr_uinstr[COND1] == 1))
+        printf("Branch being taken.\n");*/
     }
   }
   else {                       /* Interrupt detected. */
     NEXT_LATCHES.INT = 0;      /* Ack the interrupt flag. */
+    NEXT_LATCHES.INTV = CURRENT_LATCHES.INTV;
     next_state = 36;           /* Next state is the first state of interrupt handling. */
-    exit(0);
+    /*exit(0);*/
   }
   
   int i;
@@ -618,6 +619,7 @@ void eval_micro_sequencer() {
   }
 
   NEXT_LATCHES.STATE_NUMBER = next_state;
+  /*printf("Next state = %d\n", next_state);*/
 }
 
 int mem_cycle_cnt = 0;
@@ -633,7 +635,10 @@ void cycle_memory() {
     /* Check for protection exception. */
     if (((CURRENT_LATCHES.PSR & 0x8000) == 0x8000) && (CURRENT_LATCHES.MAR < 0x2FFF)
        && CURRENT_LATCHES.STATE_NUMBER  != 28){
-      printf("Generating protection exception...\n");
+      printf("Generating protection exception. Current state = %d\n", 
+                                       CURRENT_LATCHES.STATE_NUMBER);
+      printf("Current PSR = %d, current MAR = %d\n", CURRENT_LATCHES.PSR, 
+                                                     CURRENT_LATCHES.MAR);
       NEXT_LATCHES.EXC  = 1;
       NEXT_LATCHES.EXCV = 0x2;
     }
@@ -642,8 +647,10 @@ void cycle_memory() {
          && ((CURRENT_LATCHES.MAR % 2) != 0)){
       printf("Generating unaligned access exception...\n");
       printf("MAR value = %d\n", CURRENT_LATCHES.MAR);
+      printf("Current state = %d\n", CURRENT_LATCHES.STATE_NUMBER);
       NEXT_LATCHES.EXC  = 1;
       NEXT_LATCHES.EXCV = 0x3;
+      exit(0);
     }
     else {
       /* Check if 5th cycle or right before set ready. */
@@ -654,10 +661,14 @@ void cycle_memory() {
         /*printf("5th memory cycle.\n");*/
         /* Check if read or write. */
         if(CURRENT_LATCHES.MICROINSTRUCTION[R_W] == 0) { /* Read */
-          NEXT_LATCHES.MDR  =  MEMORY[CURRENT_LATCHES.MAR / 2][0] & 0x00ff;
-          NEXT_LATCHES.MDR |= (MEMORY[CURRENT_LATCHES.MAR / 2][1] & 0x00ff) << 8;
-          /*printf("Performed memory read.\n");*/
-          /*printf("MDR = %d\n", NEXT_LATCHES.MDR);*/
+          int MAR = CURRENT_LATCHES.MAR;
+          if((MAR % 2) == 1){
+            MAR = MAR - 1;
+          }
+          NEXT_LATCHES.MDR  =  MEMORY[MAR / 2][0] & 0x00ff;
+          NEXT_LATCHES.MDR |= (MEMORY[MAR / 2][1] & 0x00ff) << 8;
+          /*printf("Performed memory read.\n");
+          printf("MDR = %d\n", NEXT_LATCHES.MDR);*/
         }
         else {                                           /* Write */
           if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) { /* Byte */
@@ -722,7 +733,7 @@ void eval_bus_drivers() {
 /* 
  ** Datapath routine emulating operations before driving the bus.
  ** Evaluate the input of tristate drivers 
- **             Gate_MARMUX,
+ **              Gate_MARMUX,
  **		 Gate_PC,
  **		 Gate_ALU,
  **		 Gate_SHF,
@@ -737,16 +748,21 @@ void eval_bus_drivers() {
   if     ((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 0)
        && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0)){
     addr1mux = CURRENT_LATCHES.PC;
-    /*printf("Addr1mux loaded with current pc: %d\n", CURRENT_LATCHES.PC);*/
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr1mux loaded with current pc: %d\n", CURRENT_LATCHES.PC);
   }
   else if((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 1)
        && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0)){
     int BaseR = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
     BaseR = CURRENT_LATCHES.REGS[BaseR];
     addr1mux = BaseR;
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr1mux loaded with baser = %d\n", addr1mux);
   }
   else {
     addr1mux = 0x200;
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr1mux loaded with 0x200\n");
   }
 
   int addr2mux   = 0;
@@ -755,22 +771,38 @@ void eval_bus_drivers() {
   int addr2mux2  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX2];
   int curr_instr = CURRENT_LATCHES.IR;
 
-  if     ((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 0)) 
+  if     ((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 0)
+       && (CURRENT_LATCHES.EXC == 0) && (CURRENT_LATCHES.STATE_NUMBER != 50)){
     addr2mux = 0;
-  else if((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 1)) 
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("It is state %d and addr2mux was loaded with 0\n", CURRENT_LATCHES.STATE_NUMBER);
+  } 
+  else if((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 1)){
     addr2mux = sign_ext_6bit( curr_instr & 0x3F);
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr2mux loaded with sext6bit = %d\n", addr2mux);
+  }
   else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 0)){
     addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
-    printf("Addr2mux loaded with sext offs9: %d\n", addr2mux);
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr2mux loaded with sext offs9: %d\n", addr2mux);
   }
-  else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 1)) 
+  else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 1)){
     addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr2mux loaded with sext11bit == %d\n", addr2mux);
+  }
   else if (CURRENT_LATCHES.EXC == 1){
     addr2mux = CURRENT_LATCHES.EXCV;
     NEXT_LATCHES.EXC = 0;
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr2mux loaded with excv = %d\n", addr2mux);
   }
-  else
+  else {
     addr2mux = CURRENT_LATCHES.INTV;
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr2mux loaded with intv = %d\n", addr2mux);
+  }
 
   int lshf1 = addr2mux;
   if (CURRENT_LATCHES.MICROINSTRUCTION[LSHF1] == 1){
@@ -779,15 +811,22 @@ void eval_bus_drivers() {
   }
 
   adder = lshf1 + addr1mux;
-  /*printf("Adder val is %d\n", adder);*/
+  if(CURRENT_LATCHES.STATE_NUMBER == 2)
+    printf("Adder val is %d\n", adder);
 
   if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended 
                                                          IR7:0 */
     Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
-    /*printf("MARMUX selects zext ir[7:0] = %d\n", Gate_MARMUX);*/
+    if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("MARMUX selects zext ir[7:0] = %d\n", Gate_MARMUX);
   }
   else {
     Gate_MARMUX = adder;
+  }
+
+  if(CURRENT_LATCHES.STATE_NUMBER == 2){
+    printf("In state 2 Gate_MARMUX is %d\n", Gate_MARMUX);
+    printf("addr1mux = %d, addr2mux = %d\n", addr1mux, addr2mux);
   }
 
   Gate_PC = CURRENT_LATCHES.PC;
@@ -825,14 +864,17 @@ void eval_bus_drivers() {
     alu_result = (sr1 + sr2) & 0xFFFF;
     int sum = sr1 + sr2;
     if(CURRENT_LATCHES.STATE_NUMBER == 1){
-      printf("ALU sr1 = %d, sr2 = %d\n", sr1, sr2);
-      printf("ALU summation result is %d\n", sum);
+      /*printf("ALU sr1 = %d, sr2 = %d\n", sr1, sr2);
+      printf("ALU summation result is %d\n", sum);*/
     }
   }
   else if((aluk1 == 0) && (aluk0 == 1)) alu_result = (sr1 & sr2) & 0xFFFF;
   else if((aluk1 == 1) && (aluk0 == 0)) alu_result = (sr1 ^ sr2) & 0xFFFF;
   else if((aluk1 == 1) && (aluk0 == 1)) alu_result = (sr1)       & 0xFFFF;
   Gate_ALU = alu_result;
+
+  if(CURRENT_LATCHES.STATE_NUMBER == 39)
+    /*printf("In state 39 sr1 = %d, sr2 = %d, result = %d\n", sr1, sr2, Gate_ALU);*/
 
   if((CURRENT_LATCHES.IR & 0x0010) == 0){
     Gate_SHF = sr1 << (CURRENT_LATCHES.IR & 0x000F);
@@ -849,9 +891,16 @@ void eval_bus_drivers() {
   if(CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 0) {
     if((CURRENT_LATCHES.MAR % 2) == 0){
       Gate_MDR = sign_ext_8bit(CURRENT_LATCHES.MDR & 0x00FF);
+      /*printf("Even memory address access...\n");*/
     }
     else { 
-      Gate_MDR = sign_ext_8bit(CURRENT_LATCHES.MDR & 0xFF00 >> 8);
+      unsigned int val = CURRENT_LATCHES.MDR;
+      val = val >> 8;
+      val = val & 0xff;
+      Gate_MDR = sign_ext_8bit(val);
+      /*printf("Odd memory address access...\n");
+      printf("Gate_MDR = %d\n", Gate_MDR);
+      printf("MDR = %d\n", CURRENT_LATCHES.MDR);*/
     }
   }
   else {
@@ -870,22 +919,34 @@ void drive_bus() {
  ** tristate drivers. 
  **/       
        if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MARMUX]  == 1){
-    BUS = Gate_MARMUX;
-    printf("MARMUX gated to bus with val: %d\n", Gate_MARMUX);
+    BUS = Gate_MARMUX & 0xFFFF;
+    /*printf("MARMUX gated to bus with val: %d\n", Gate_MARMUX);*/
   }
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PC]      == 1) BUS = Gate_PC;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU]     == 1) BUS = Gate_ALU;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF]     == 1) BUS = Gate_SHF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PC]      == 1) BUS = Gate_PC      & 0xFFFF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_ALU]     == 1) BUS = Gate_ALU     & 0xFFFF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SHF]     == 1) BUS = Gate_SHF     & 0xFFFF;
   else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_MDR]     == 1){
-    BUS = Gate_MDR;
-    if (CURRENT_LATCHES.STATE_NUMBER == 31)
-      printf("MDR gated to bus by LDB with val: %d\n", BUS);
+    BUS = Gate_MDR & 0xFFFF;
+    /*if (CURRENT_LATCHES.STATE_NUMBER == 31)
+      printf("MDR gated to bus by LDB with val: %d\n", BUS);*/
   }
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR]     == 1) BUS = Gate_PSR;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SSP]     == 1) BUS = Gate_SSP;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_OLD_PSR] == 1) BUS = Gate_OLD_PSR;
-  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_USP]     == 1) BUS = Gate_USP;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_PSR]     == 1) BUS = Gate_PSR     & 0xFFFF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_SSP]     == 1) BUS = Gate_SSP     & 0xFFFF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_OLD_PSR] == 1) BUS = Gate_OLD_PSR & 0xFFFF;
+  else if(CURRENT_LATCHES.MICROINSTRUCTION[GATE_USP]     == 1) BUS = Gate_USP     & 0xFFFF;
 }
+
+int MAR_save = 0;
+int IR_save  = 0;
+int PC_save  = 0;
+int R0_save  = 0;
+int R1_save  = 0;
+int R2_save  = 0;
+int R3_save  = 0;
+int R4_save  = 0;
+int R5_save  = 0;
+int R6_save  = 0;
+int R7_save  = 0;
 
 void latch_datapath_values() {
 /* 
@@ -944,6 +1005,11 @@ void latch_datapath_values() {
     else {
       NEXT_LATCHES.REGS[6]  = BUS;
     }
+
+    /*if (CURRENT_LATCHES.STATE_NUMBER == 38)*/
+      /*printf("In state 38 and r6 loaded with ssp = %d\n", BUS);*/
+    /*else if (CURRENT_LATCHES.STATE_NUMBER == 39)
+      printf("In state 39 and r6 loaded with r6-2 = %d\n", BUS);*/
   }
 
   if (curr_uinstr[LD_CC] == 1){
@@ -995,19 +1061,56 @@ void latch_datapath_values() {
     NEXT_LATCHES.PSR &= ~0x8000;
 
   if (curr_uinstr[PRIV_CHK] == 1)
-    if ((CURRENT_LATCHES.PSR & 0x8000) == 0x8000)
+    if ((CURRENT_LATCHES.PSR & 0x8000) == 0x8000){
+      printf("Privelege error, halting...\n");
       exit(0);
+    }
 
   if (curr_uinstr[LD_SSP] == 1)
     NEXT_LATCHES.SSP = BUS;
 
-  if (curr_uinstr[LD_PSR] == 1)
+  if (curr_uinstr[LD_PSR] == 1){
     NEXT_LATCHES.PSR = BUS;
+  }
 
   if (curr_uinstr[REST_CC] == 1){
     NEXT_LATCHES.N = (NEXT_LATCHES.PSR & 0x4) >> 2;
     NEXT_LATCHES.Z = (NEXT_LATCHES.PSR & 0x2) >> 1;
     NEXT_LATCHES.P =  NEXT_LATCHES.PSR & 0x1;
+  }
+
+  if(CURRENT_LATCHES.STATE_NUMBER == 36){
+    printf("First state of interrupt handling. Current MAR = %d\n", CURRENT_LATCHES.MAR);
+    MAR_save = CURRENT_LATCHES.MAR;
+    IR_save  = CURRENT_LATCHES.IR;
+    PC_save  = CURRENT_LATCHES.PC - 2;
+    R0_save  = CURRENT_LATCHES.REGS[0];
+    R1_save  = CURRENT_LATCHES.REGS[1];
+    R2_save  = CURRENT_LATCHES.REGS[2];
+    R3_save  = CURRENT_LATCHES.REGS[3];
+    R4_save  = CURRENT_LATCHES.REGS[4];
+    R5_save  = CURRENT_LATCHES.REGS[5];
+    R6_save  = CURRENT_LATCHES.REGS[6];
+    R7_save  = CURRENT_LATCHES.REGS[7];
+    printf("Saved PC = %d\n", PC_save);
+  }
+  else if(CURRENT_LATCHES.STATE_NUMBER == 53){
+    printf("Last state of interrupt handling...\n");
+    NEXT_LATCHES.MAR = MAR_save;
+    NEXT_LATCHES.IR  = IR_save;
+    NEXT_LATCHES.PC  = PC_save;
+    NEXT_LATCHES.REGS[0] = R0_save;
+    NEXT_LATCHES.REGS[1] = R1_save;
+    NEXT_LATCHES.REGS[2] = R2_save;
+    NEXT_LATCHES.REGS[3] = R3_save;
+    NEXT_LATCHES.REGS[4] = R4_save;
+    NEXT_LATCHES.REGS[5] = R5_save;
+    NEXT_LATCHES.REGS[6] = R6_save;
+    NEXT_LATCHES.REGS[7] = R7_save;
+    printf("Restored PC = %d\n", PC_save);
+  }
+  else if(CURRENT_LATCHES.STATE_NUMBER == 18){
+    printf("State 18, PC = %d\n", CURRENT_LATCHES.PC);
   }
 }
 
