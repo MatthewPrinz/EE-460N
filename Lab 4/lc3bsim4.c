@@ -1,3 +1,8 @@
+/*
+        Name: Garret Blevins
+        UTEID: geb628
+*/
+
 /***************************************************************/
 /*   LC-3b Simulator                                           */
 /*   EE 460N                                                   */
@@ -508,11 +513,11 @@ void initialize(char *ucode_filename, char *program_filename, int num_prog_files
     CURRENT_LATCHES.STATE_NUMBER = INITIAL_STATE_NUMBER;
     memcpy(CURRENT_LATCHES.MICROINSTRUCTION, CONTROL_STORE[INITIAL_STATE_NUMBER], sizeof(int)*CONTROL_STORE_BITS);
 
-    CURRENT_LATCHES.SSP = 0x3000; /* Initial value of system stack pointer */
+    CURRENT_LATCHES.SSP = 0x3000; /* Initial value of system stack pointer          */
 
 /************************************************************************************/
     CURRENT_LATCHES.PSR = 0x8002; /* Initialize PSR to user mode and set the Z bit. */
-    CURRENT_LATCHES.USP = 0xFE00; /* Initialize the user stack pointer. */
+    CURRENT_LATCHES.USP = 0xFE00; /* Initialize the user stack pointer.             */
 /************************************************************************************/
 
     NEXT_LATCHES = CURRENT_LATCHES;
@@ -546,36 +551,38 @@ int main(int argc, char *argv[]) {
 	get_command(dumpsim_file);
 }
 
-/***************************************************************/
-/* Do not modify the above code, except for the places indicated 
- * with a "MODIFY:" comment.
- *
- * Do not modify the rdump and mdump functions.
- *
- * You are allowed to use the following global variables in your
- * code. These are defined above.
- *
- * CONTROL_STORE
- * MEMORY
- * BUS
- *
- * CURRENT_LATCHES
- * NEXT_LATCHES
- *
- * You may define your own local/global variables and functions.
- * You may use the functions to get at the control bits defined
- * above.
- *
- * Begin your code here 	  	      		       */
-/***************************************************************/
+/*****************************************************************/
+/* Do not modify the above code, except for the places indicated */ 
+/* with a "MODIFY:" comment.                                     */
+/*                                                               */
+/* Do not modify the rdump and mdump functions.                  */
+/*                                                               */
+/* You are allowed to use the following global variables in your */
+/* code. These are defined above.                                */
+/*                                                               */
+/* CONTROL_STORE                                                 */
+/* MEMORY                                                        */
+/* BUS                                                           */
+/*                                                               */
+/* CURRENT_LATCHES                                               */
+/* NEXT_LATCHES                                                  */
+/*                                                               */
+/* You may define your own local/global variables and functions. */
+/* You may use the functions to get at the control bits defined  */
+/* above.                                                        */
+/*                                                               */
+/* Begin your code here 	  	      		         */
+/*****************************************************************/
+
+int EXC = 0;
 
 void eval_micro_sequencer() {
-/* 
+/** 
  ** Evaluate the address of the next state according to the 
  ** micro sequencer logic. Latch the next microinstruction.
  **/
   int next_state = 0;
-  /*printf("Current state = %d\n", CURRENT_LATCHES.STATE_NUMBER);*/
+  printf("Current state = %d\n", CURRENT_LATCHES.STATE_NUMBER);
 
   if ((CURRENT_LATCHES.INT == 0) && (CURRENT_LATCHES.EXC == 0)) { /* Check for interrupt. 
                                                                      and exception. */
@@ -583,7 +590,7 @@ void eval_micro_sequencer() {
     if (curr_uinstr[IRD] == 1) {  /* If state 32, IRD is set and use 00 concat 
                                      with IR[15:12] for instruction state. */
       next_state = ((CURRENT_LATCHES.IR & 0xF000) >> 12) & 0x3F;
-      /*printf("Starting instruction execution. Next sate = %d\n", next_state);*/
+      printf("Starting instruction execution. Next sate = %d\n", next_state);
       /* Check for unknown opcode exception (ops 10 and 11). */
       if ((next_state == 10) || (next_state == 11)){
         printf("Generating unknown opcode exeption...\n");
@@ -608,6 +615,8 @@ void eval_micro_sequencer() {
   }
   else {                       /* Interrupt detected. */
     NEXT_LATCHES.INT = 0;      /* Ack the interrupt flag. */
+    if(NEXT_LATCHES.EXC == 1) EXC = 1;
+    /*NEXT_LATCHES.EXC = 0;*/
     NEXT_LATCHES.INTV = CURRENT_LATCHES.INTV;
     next_state = 36;           /* Next state is the first state of interrupt handling. */
     /*exit(0);*/
@@ -644,13 +653,13 @@ void cycle_memory() {
     }
     /* Check for unaligned access exception. */
     else if ((CURRENT_LATCHES.MICROINSTRUCTION[DATA_SIZE] == 1) 
-         && ((CURRENT_LATCHES.MAR % 2) != 0)){
+         && ((CURRENT_LATCHES.MAR % 2) != 0) && (EXC == 0)){
       printf("Generating unaligned access exception...\n");
       printf("MAR value = %d\n", CURRENT_LATCHES.MAR);
-      printf("Current state = %d\n", CURRENT_LATCHES.STATE_NUMBER);
+      printf("Current state (state unaligned access is generated) = %d\n",                                                             CURRENT_LATCHES.STATE_NUMBER);
       NEXT_LATCHES.EXC  = 1;
       NEXT_LATCHES.EXCV = 0x3;
-      exit(0);
+      /*exit(0);*/
     }
     else {
       /* Check if 5th cycle or right before set ready. */
@@ -730,7 +739,7 @@ int Gate_OLD_PSR = 0;
 int Gate_USP     = 0;
 
 void eval_bus_drivers() {
-/* 
+/**
  ** Datapath routine emulating operations before driving the bus.
  ** Evaluate the input of tristate drivers 
  **              Gate_MARMUX,
@@ -748,21 +757,21 @@ void eval_bus_drivers() {
   if     ((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 0)
        && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0)){
     addr1mux = CURRENT_LATCHES.PC;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("Addr1mux loaded with current pc: %d\n", CURRENT_LATCHES.PC);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr1mux loaded with current pc: %d\n", CURRENT_LATCHES.PC);*/
   }
   else if((CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX]  == 1)
        && (CURRENT_LATCHES.MICROINSTRUCTION[ADDR1MUX2] == 0)){
     int BaseR = (CURRENT_LATCHES.IR & 0x1C0) >> 6;
     BaseR = CURRENT_LATCHES.REGS[BaseR];
     addr1mux = BaseR;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("addr1mux loaded with baser = %d\n", addr1mux);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr1mux loaded with baser = %d\n", addr1mux);*/
   }
   else {
     addr1mux = 0x200;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("addr1mux loaded with 0x200\n");
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr1mux loaded with 0x200\n");*/
   }
 
   int addr2mux   = 0;
@@ -771,62 +780,65 @@ void eval_bus_drivers() {
   int addr2mux2  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX2];
   int curr_instr = CURRENT_LATCHES.IR;
 
+  printf("EXC = %d,\nEXCV = %d\n", EXC, CURRENT_LATCHES.EXCV);
+
   if     ((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 0)
-       && (CURRENT_LATCHES.EXC == 0) && (CURRENT_LATCHES.STATE_NUMBER != 50)){
+       && (EXC == 0) && (CURRENT_LATCHES.STATE_NUMBER != 50)){
     addr2mux = 0;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("It is state %d and addr2mux was loaded with 0\n", CURRENT_LATCHES.STATE_NUMBER);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("It is state %d and addr2mux was loaded with 0\n", CURRENT_LATCHES.STATE_NUMBER);*/
   } 
   else if((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 1)){
     addr2mux = sign_ext_6bit( curr_instr & 0x3F);
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("addr2mux loaded with sext6bit = %d\n", addr2mux);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr2mux loaded with sext6bit = %d\n", addr2mux);*/
   }
   else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 0)){
     addr2mux = sign_ext_9bit( curr_instr & 0x1FF);
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("Addr2mux loaded with sext offs9: %d\n", addr2mux);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr2mux loaded with sext offs9: %d\n", addr2mux);*/
   }
   else if((addr2mux2 == 0) && (addr2mux1 == 1) && (addr2mux0 == 1)){
     addr2mux = sign_ext_11bit(curr_instr & 0x7FF);
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("addr2mux loaded with sext11bit == %d\n", addr2mux);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("addr2mux loaded with sext11bit == %d\n", addr2mux);*/
   }
-  else if (CURRENT_LATCHES.EXC == 1){
+  else if (EXC == 1){
     addr2mux = CURRENT_LATCHES.EXCV;
     NEXT_LATCHES.EXC = 0;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("addr2mux loaded with excv = %d\n", addr2mux);
+    /*EXC = 0;*/
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 50)*/
+      printf("in state %d addr2mux loaded with excv = %d\n", CURRENT_LATCHES.STATE_NUMBER                                                             , addr2mux);
   }
   else {
     addr2mux = CURRENT_LATCHES.INTV;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("Addr2mux loaded with intv = %d\n", addr2mux);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("Addr2mux loaded with intv = %d\n", addr2mux);*/
   }
 
   int lshf1 = addr2mux;
   if (CURRENT_LATCHES.MICROINSTRUCTION[LSHF1] == 1){
     lshf1 = lshf1 << 1;
-    printf("Addr2mux left shifted to %d\n", lshf1);
+    /*printf("Addr2mux left shifted to %d\n", lshf1);*/
   }
 
   adder = lshf1 + addr1mux;
-  if(CURRENT_LATCHES.STATE_NUMBER == 2)
-    printf("Adder val is %d\n", adder);
+  /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+    printf("Adder val is %d\n", adder);*/
 
   if(CURRENT_LATCHES.MICROINSTRUCTION[MARMUX] == 0) { /* Use left shifted zero extended 
                                                          IR7:0 */
     Gate_MARMUX = (CURRENT_LATCHES.IR & 0x00FF) << 1;
-    if(CURRENT_LATCHES.STATE_NUMBER == 2)
-      printf("MARMUX selects zext ir[7:0] = %d\n", Gate_MARMUX);
+    /*if(CURRENT_LATCHES.STATE_NUMBER == 2)
+      printf("MARMUX selects zext ir[7:0] = %d\n", Gate_MARMUX);*/
   }
   else {
     Gate_MARMUX = adder;
   }
 
   if(CURRENT_LATCHES.STATE_NUMBER == 2){
-    printf("In state 2 Gate_MARMUX is %d\n", Gate_MARMUX);
-    printf("addr1mux = %d, addr2mux = %d\n", addr1mux, addr2mux);
+    /*printf("In state 2 Gate_MARMUX is %d\n", Gate_MARMUX);
+    printf("addr1mux = %d, addr2mux = %d\n", addr1mux, addr2mux);*/
   }
 
   Gate_PC = CURRENT_LATCHES.PC;
@@ -873,8 +885,8 @@ void eval_bus_drivers() {
   else if((aluk1 == 1) && (aluk0 == 1)) alu_result = (sr1)       & 0xFFFF;
   Gate_ALU = alu_result;
 
-  if(CURRENT_LATCHES.STATE_NUMBER == 39)
-    /*printf("In state 39 sr1 = %d, sr2 = %d, result = %d\n", sr1, sr2, Gate_ALU);*/
+  /*if(CURRENT_LATCHES.STATE_NUMBER == 39)
+    printf("In state 39 sr1 = %d, sr2 = %d, result = %d\n", sr1, sr2, Gate_ALU);*/
 
   if((CURRENT_LATCHES.IR & 0x0010) == 0){
     Gate_SHF = sr1 << (CURRENT_LATCHES.IR & 0x000F);
@@ -947,6 +959,7 @@ int R4_save  = 0;
 int R5_save  = 0;
 int R6_save  = 0;
 int R7_save  = 0;
+int int_cntr = 0;
 
 void latch_datapath_values() {
 /* 
@@ -1048,7 +1061,7 @@ void latch_datapath_values() {
       NEXT_LATCHES.PC = adder;
     }
     
-    /*printf("PC loaded with: %d\n", NEXT_LATCHES.PC);*/
+    printf("PC loaded with: %d\n", NEXT_LATCHES.PC);
   }
 
   if (curr_uinstr[LD_OLD_PSR] == 1)
@@ -1110,7 +1123,14 @@ void latch_datapath_values() {
     printf("Restored PC = %d\n", PC_save);
   }
   else if(CURRENT_LATCHES.STATE_NUMBER == 18){
-    printf("State 18, PC = %d\n", CURRENT_LATCHES.PC);
+    /*printf("State 18, PC = %d\n", CURRENT_LATCHES.PC);*/
+  }
+  else if(CURRENT_LATCHES.STATE_NUMBER == 50){
+    int_cntr++;
+    if(int_cntr == 2){
+      /*printf("In state 50, MAR = %d\n", NEXT_LATCHES.MAR);*/
+      /*exit(0);*/
+    }
   }
 }
 
