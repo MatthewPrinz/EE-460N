@@ -780,7 +780,7 @@ void eval_bus_drivers() {
   int addr2mux2  = CURRENT_LATCHES.MICROINSTRUCTION[ADDR2MUX2];
   int curr_instr = CURRENT_LATCHES.IR;
 
-  printf("EXC = %d,\nEXCV = %d\n", EXC, CURRENT_LATCHES.EXCV);
+  /*printf("EXC = %d,\nEXCV = %d\n", EXC, CURRENT_LATCHES.EXCV);*/
 
   if     ((addr2mux2 == 0) && (addr2mux1 == 0) && (addr2mux0 == 0)
        && (EXC == 0) && (CURRENT_LATCHES.STATE_NUMBER != 50)){
@@ -808,7 +808,7 @@ void eval_bus_drivers() {
     NEXT_LATCHES.EXC = 0;
     /*EXC = 0;*/
     /*if(CURRENT_LATCHES.STATE_NUMBER == 50)*/
-      printf("in state %d addr2mux loaded with excv = %d\n", CURRENT_LATCHES.STATE_NUMBER                                                             , addr2mux);
+      /*printf("in state %d addr2mux loaded with excv = %d\n", CURRENT_LATCHES.STATE_NUMBER                                                             , addr2mux);*/
   }
   else {
     addr2mux = CURRENT_LATCHES.INTV;
@@ -1105,14 +1105,26 @@ void latch_datapath_values() {
     R5_save  = CURRENT_LATCHES.REGS[5];
     R6_save  = CURRENT_LATCHES.REGS[6];
     R7_save  = CURRENT_LATCHES.REGS[7];
+    /*MAR_save = NEXT_LATCHES.MAR;
+    IR_save  = NEXT_LATCHES.IR;
+    PC_save  = NEXT_LATCHES.PC - 2;
+    R0_save  = NEXT_LATCHES.REGS[0];
+    R1_save  = NEXT_LATCHES.REGS[1];
+    R2_save  = NEXT_LATCHES.REGS[2];
+    R3_save  = NEXT_LATCHES.REGS[3];
+    R4_save  = NEXT_LATCHES.REGS[4];
+    R5_save  = NEXT_LATCHES.REGS[5];
+    R6_save  = NEXT_LATCHES.REGS[6];
+    R7_save  = NEXT_LATCHES.REGS[7];*/
     printf("Saved PC = %d\n", PC_save);
+    printf("Saved R0 = %d\n", R0_save);
   }
   else if(CURRENT_LATCHES.STATE_NUMBER == 53){
     printf("Last state of interrupt handling...\n");
     NEXT_LATCHES.MAR = MAR_save;
     NEXT_LATCHES.IR  = IR_save;
     NEXT_LATCHES.PC  = PC_save;
-    NEXT_LATCHES.REGS[0] = R0_save;
+    /*NEXT_LATCHES.REGS[0] = R0_save;*/
     NEXT_LATCHES.REGS[1] = R1_save;
     NEXT_LATCHES.REGS[2] = R2_save;
     NEXT_LATCHES.REGS[3] = R3_save;
@@ -1120,7 +1132,18 @@ void latch_datapath_values() {
     NEXT_LATCHES.REGS[5] = R5_save;
     NEXT_LATCHES.REGS[6] = R6_save;
     NEXT_LATCHES.REGS[7] = R7_save;
+    /*****************************/
+    /*CURRENT_LATCHES.REGS[0] = R0_save;
+    CURRENT_LATCHES.REGS[1] = R1_save;
+    CURRENT_LATCHES.REGS[2] = R2_save;
+    CURRENT_LATCHES.REGS[3] = R3_save;
+    CURRENT_LATCHES.REGS[4] = R4_save;
+    CURRENT_LATCHES.REGS[5] = R5_save;
+    CURRENT_LATCHES.REGS[6] = R6_save;
+    CURRENT_LATCHES.REGS[7] = R7_save;*/
+    /*****************************/
     printf("Restored PC = %d\n", PC_save);
+    printf("Restored R0 = %d\n", R0_save);
   }
   else if(CURRENT_LATCHES.STATE_NUMBER == 18){
     /*printf("State 18, PC = %d\n", CURRENT_LATCHES.PC);*/
