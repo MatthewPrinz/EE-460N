@@ -24,7 +24,7 @@ LOOP  LDB R3, R0, #0 ; R3 is the value from the current location.
 
       LEA R0, PNTR3
       LDW R0, R0, #0
-      STW R3, R0, #0 ; Store the sum at xC017. 
+      STW R1, R0, #0 ; Store the sum at xC017. 
 
       TRAP x25
 
