@@ -879,6 +879,8 @@ int MEM_PCMUX           = 0;
 int TRAP_PC             = 0;
 int TARGET_PC           = 0;
 int is_cntrl_instr_proc = 0;
+int v_mem_ld_reg        = 0;
+int v_mem_ld_cc         = 0;
 
 /************************* MEM_stage() *************************/
 void MEM_stage() {
@@ -894,6 +896,9 @@ void MEM_stage() {
     NEW_PS.SR_CS [jj++] = PS.MEM_CS [ii];
   }
 }
+
+int v_agex_ld_reg = 0;
+int v_agex_ld_cc  = 0;
 
 /************************* AGEX_stage() *************************/
 void AGEX_stage() {
@@ -916,6 +921,8 @@ void AGEX_stage() {
   }
 }
 
+int dr_mux = 0;
+
 /************************* DE_stage() *************************/
 void DE_stage() {
   int CONTROL_STORE_ADDRESS;  /* You need to implement the logic to
@@ -926,11 +933,73 @@ void DE_stage() {
 		  LD.AGEX signal */
 
   /* your code for DE stage goes here */
+  /* Compute 6 bit cntrl store addrs with ir[15:11] and ir[5]. */
+  CONTROL_STORE_ADDRESS = ((PS.DE_IR & 0xF800) >> 10) | ((PS.DE_IR & 0x0020) >> 5);
+  int SR1 = (PS.DE_IR & 0x01C0) >> 6;
+  int SR2;
+  if((PS.DE_IR & 0x2000) == 0x2000){
+    SR2 = PS.DE_IR & 0x7;
+  }
+  else {
+    SR2 = (PS.DE_IR & 0x0E00) >> 9;
+  }
+  if(v_sr_ld_reg == 1){
+    REGS[sr_reg_id] = sr_reg_data;
+  }
+  if(v_sr_ld_cc == 1){
+    N = sr_n;
+    Z = sr_z;
+    P = sr_p;
+  }
+  if(CONTROL_STORE[CONTROL_STORE_ADDRESS][DRMUX] == 0){
+    dr_mux = (PS.DE_IR & 0x0E00) >> 9;
+  }
+  else {
+    dr_mux = 7;
+  }
+  /* Dependency check logic. */
+  dep_stall = 0;
+  if(PS.DE_V == 0){
+    dep_stall = 1;
+  }
+  else {
+    if((CONTROL_STORE[CONTROL_STORE_ADDRESS][SR1_NEEDED] == 1) 
+    || (CONTROL_STORE[CONTROL_STORE_ADDRESS][SR2_NEEDED] == 1)){
+      if(v_agex_ld_reg == 1){
+        if((SR1 == PS.AGEX_DRID) || (SR2 == PS.AGEX_DRID)){
+          dep_stall = 1;
+          break;
+        }
+      }
+      if(v_mem_ld_reg == 1){
+        if((SR1 == PS.MEM_DRID) || (SR2 == PS.MEM_DRID)){
+          dep_stall = 1;
+          break;
+        }
+      }
+      if(v_sr_ld_reg == 1){
+        if((SR1 == PS.SR_DRID) || (SR2 == PS.SR_DRID)){
+          dep_stall = 1;
+          break;
+        }
+      }
+    }
+    if(CONTROL_STORE[CONTROL_STORE_ADDRESS][BR_OP] == 1){
+      if((v_agex_ld_cc == 1) || (v_mem_ld_cc == 1) || (v_sr_ld_cc == 1)){
+        dep_stall = 1;
+      }
+    }
+  }
 
+  /* Next is the BR_STALL logic. */
   
+ 
   if (LD_AGEX) {
     /* Your code for latching into AGEX latches goes here */
-    
+    NEW_PS.AGEX_SR1  = REGS[SR1];
+    NEW_PS.AGEX_SR2  = REGS[SR2];
+    NEW_PS.AGEX_CC   = (N << 2) | (Z << 1) | P;
+    NEW_PS.AGEX_DRID = dr_mux;
 
     /* The code below propagates the control signals from the CONTROL
      * STORE to the AGEX.CS latch. */
@@ -943,8 +1012,8 @@ void DE_stage() {
 /* Input values for fetch latches. */
 int de_npc = 0;
 int de_ir  = 0;
-int de_v   = 0;
 int pc_mux = 0;
+int de_v   = 0;
 
 /************************* FETCH_stage() *************************/
 void FETCH_stage() {
@@ -956,14 +1025,10 @@ void FETCH_stage() {
    */
   icache_access(PC, *de_ir, *icache_r);
 
-  if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0)                      && (v_mem_br_stall == 0) && (mem_stall == 0)){
-    de_v = 0;
-  }
-  else {
-    de_v = 1;
-  }
-
   /* Compute the value of the PCMUX. */
+  if((is_cntrl_instr_proc == 0) && (dep_stall == 0) && (mem_stall == 0)){
+    MEM_PCMUX = 0;
+  }
   switch(MEM_PCMUX){
   case 0:
     pc_mux = PC + 2;
@@ -977,14 +1042,7 @@ void FETCH_stage() {
   }
 
   /* Perform logic for the load signals. */
-  if((dep_stall == 1) || (mem_stall == 1)){
-    LD_DE = 0;
-  }
-  else {
-    LD_DE = 1;
-  }
-
-  if((is_cntrl_instr_proc == 1) || (icache_r == 1)){
+  if((dep_stall == 0) && (mem_stall == 0))){
     LD_PC = 1;
   }
   else {
@@ -994,10 +1052,26 @@ void FETCH_stage() {
   if(LD_PC == 1){
     PC = pc_mux
   }
+
+  if((icache_r == 0) && (dep_stall == 0) && (mem_stall == 0)){
+    de_v = 0;
+  }
+  else {
+    de_v = 1;
+  }
+
+  if((de_v == 0) || (dep_stall == 1) || mem_stall == 1){
+    LD_DE = 0;
+    NEW_PS.DE_V = 0;
+  }
+  else {
+    LE_DE = 1;
+  }
+
   if(LD_DE == 1){
-    DE_NPC = PC + 2;
-    DE_IR  = de_ir;
-    DE_V   = de_v;
+    NEW_PS.DE_NPC = PC + 2;
+    NEW_PS.DE_IR  = de_ir;
+    NEW_PS.DE_V   = de_v;
   }
 }
 
