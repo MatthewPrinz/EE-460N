@@ -1288,9 +1288,6 @@ void FETCH_stage() {
   icache_access(PC, *de_ir, *icache_r);
 
   /* Compute the value of the PCMUX. */
-  if((is_cntrl_instr_proc == 0) && (dep_stall == 0) && (mem_stall == 0)){
-    MEM_PCMUX = 0;
-  }
   switch(MEM_PCMUX){
   case 0:
     pc_mux = PC + 2;
@@ -1304,8 +1301,9 @@ void FETCH_stage() {
   }
 
   /* Perform logic for the load signals. */
-  if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0) 
-                     && (v_mem_br_stall == 0) && (mem_stall == 0)){
+  if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0) 
+   && (v_de_br_stall == 0) && (v_agex_br_stall == 0)      && (v_mem_br_stall == 0) 
+   && (mem_stall == 0))){
     LD_PC = 1;
   }
   else {
