@@ -907,8 +907,134 @@ void AGEX_stage() {
 		 signal */
 
   /* your code for AGEX stage goes here */
+  int mem_address, mem_cs, mem_npc, mem_cc, mem_alu_result, mem_ir, 
+      mem_drid;
 
+  int addr1mux;
+  if(PS.AGEX_CS[AGEX_ADDR1MUX] == 0){
+    addr1mux = PS.AGEX_NPC;
+  }
+  else {
+    addr1mux = PS.AGEX_SR1;
+  }
   
+  int addr2mux;
+  int addr2mux_sel = (PS.AGEX_CS[AGEX_ADDR2MUX1] << 1) | PS.AGEX_CS[AGEX_ADDR2MUX0];
+  switch(addr2mux){
+    case 0:
+      addr2mux = 0
+      break;
+    case 1:
+      if((PS.AGEX_IR | 0x20) == 0x20){
+        addr2mux = (PS.AGEX_IR & 0x3F) | 0xFFFFFFC0;
+      }
+      else {
+        addr2mux =  PS.AGEX_IR & 0x3F;
+      }
+      break;
+    case 2:
+      if((PS.AGEX_IR | 0x100) == 0x100){
+        addr2mux = (PS.AGEX_IR & 0x1FF) | 0xFFFFFE00;
+      }
+      else {
+        addr2mux =  PS.AGEX_IR & 0x1FF;
+      }
+      break;
+    case 3:
+      if((PS.AGEX_IR | 0x400) == 0x400){
+        addr2mux = (PS.AGEX_IR & 0x7FF) | 0xFFFFF800;
+      }
+      else {
+        addr2mux =  PS.AGEX_IR & 0x7FF;
+      }
+      break;
+  }
+
+  int lshf1;
+  if(PS.AGEX_CS[AGEX_LSHF1] == 1){
+    lshf1 = addr2mux << 1;
+  }
+  else {
+    lshf1 = addr2mux;
+  }
+
+  int adder = addr1mux + addr2mux;
+
+  int addressmux;
+  if(PS.AGEX_CS[AGEX_ADDRESSMUX] == 0){
+    addressmux = (PS.AGEX_IR & 0xFF) << 1;
+  }
+  else {
+    addressmux = adder;
+  }
+  
+  int sr2mux;
+  if(PS.AGEX_CS[AGEX_SR2MUX] == 0){
+    sr2mux = PS.AGEX_SR2;
+  }
+  else {
+    if((PS.AGEX_IR && 0x10) == 0x10){
+      sr2mux = (PS.AGEX_IR & 0x1F) | 0xFFFFFFE0;
+    }
+    else {
+      sr2mux =  PS.AGEX_IR & 0x1F;
+    }
+  }
+  
+  int SHF, shf_sel;
+  shf_sel = ((PS.AGEX_IR & 0x20) >> 4) | ((PS.AGEX_IR & 0x10) >> 4);
+  switch(shf_sel){
+    case 0:
+      SHF = AGEX_SR1 << (PS.AGEX_IR & 0xF);
+      break;
+    case 1:
+      SHF = AGEX_SR1 >> (PS.AGEX_IR & 0xF);
+      break;
+    case 2:
+      int sr15 = AGEX_SR1 & 0x8000;
+      SHF = (AGEX_SR1 >> (PS.AGEX_IR & 0xF)) | sr15;
+      break;
+  }
+  
+  int ALU, A, B, ALUK;
+  if((PS.AGEX_SR1 & 0x8000) == 0x8000){
+    A = PS.AGEX_SR1 | 0xFFFF0000;
+  }
+  else {
+    A = PS.AGEX_SR1;
+  }
+  B = sr2mux;
+  ALUK = (PS.AGEX_CS[AGEX_ALUK1] << 1) | PS.AGEX_CS[AGEX_ALUK0];
+  switch(ALUK){
+    case 0:
+      ALU = A + B;
+      break;
+    case 1:
+      ALU = A & B;
+      break;
+    case 2:
+      ALU = A ^ B;
+      break;
+    case 3:
+      ALU = B;
+      break;
+  
+  int alu_resultmux;
+  if(PS.AGEX_CS[AGEX_ALU_RESULTMUX] == 0){
+    alu_resultmux = SHF;
+  }
+  else {
+    alu_resultmux = ALU;
+  }
+
+  /* Next is logic for v_agex_ld_cc, v_agex_ld_reg, v_agex_br_stall. */
+  v_agex_ld_cc    = PS.AGEX_CS[AGEX_LD_CC];
+  v_agex_ld_reg   = PS.AGEX_CS[AGEX_LD_REG];
+  v_agex_br_stall = PS.AGEX_CS[AGEX_BR_STALL] & PS.AGEX_V;
+
+  /* Next is the logic for MEM_V and LD_MEM. */
+  
+
   if (LD_MEM) {
     /* Your code for latching into MEM latches goes here */
     
@@ -944,7 +1070,7 @@ void DE_stage() {
     SR2 = (PS.DE_IR & 0x0E00) >> 9;
   }
   if(v_sr_ld_reg == 1){
-    REGS[sr_reg_id] = sr_reg_data;
+    REGS[sr_reg_id] = sr_reg_data & 0xFFFF;
   }
   if(v_sr_ld_cc == 1){
     N = sr_n;
@@ -992,14 +1118,37 @@ void DE_stage() {
   }
 
   /* Next is the BR_STALL logic. */
+  /* If the instruction is control instruction (BR_STALL == 1) and DE_V == 1 
+   * (the instruction is valid) assert v_de_br_stall. */
+  if((CONTROL_STORE[CONTROL_STORE_ADDRESS][BR_STALL] == 1) && (PS.DE_V == 1)){
+    v_de_br_stall = 1;
+  }
+
+  /* The logic for AGEX_V and LD_AGEX. 
+   * If there is a stall ahead in the pipeline then bubble be invalicating 
+   * and not loading. */
+  if((v_agex_br_stall == 1) || (v_mem_br_stall == 1) 
+                            || (mem_stall == 1)){
+    NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 0;
+  }
+  else if(PS.DE_V == 1){
+    NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 1;
+  }
+  else {
+    NEW_PS.AGEX_V = 0;
+    LD_AGEX       = 0;
+  }
   
- 
   if (LD_AGEX) {
     /* Your code for latching into AGEX latches goes here */
     NEW_PS.AGEX_SR1  = REGS[SR1];
     NEW_PS.AGEX_SR2  = REGS[SR2];
     NEW_PS.AGEX_CC   = (N << 2) | (Z << 1) | P;
     NEW_PS.AGEX_DRID = dr_mux;
+    NEW_PS.AGEX_NPC  = PS.DE_NPC;
+    NEW_PS.AGEX_IR   = PS.DE_IR;
 
     /* The code below propagates the control signals from the CONTROL
      * STORE to the AGEX.CS latch. */
@@ -1042,7 +1191,8 @@ void FETCH_stage() {
   }
 
   /* Perform logic for the load signals. */
-  if((dep_stall == 0) && (mem_stall == 0))){
+  if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0) 
+                     && (v_mem_br_stall == 0) && (mem_stall == 0)){
     LD_PC = 1;
   }
   else {
@@ -1060,7 +1210,8 @@ void FETCH_stage() {
     de_v = 1;
   }
 
-  if((de_v == 0) || (dep_stall == 1) || mem_stall == 1){
+  if((de_v == 0) || (dep_stall == 1) || (v_de_br_stall == 1) || (v_agex_br_stall == 1) 
+                 || (v_mem_br_stall == 1) || (mem_stall == 1)){
     LD_DE = 0;
     NEW_PS.DE_V = 0;
   }
