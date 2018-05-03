@@ -1033,11 +1033,27 @@ void AGEX_stage() {
   v_agex_br_stall = PS.AGEX_CS[AGEX_BR_STALL] & PS.AGEX_V;
 
   /* Next is the logic for MEM_V and LD_MEM. */
-  
+  if((v_mem_br_stall == 1) || (mem_stall == 1)){
+    NEW_PS.MEM_V = 1;
+    LD_MEM       = 0;
+  }
+  else if(PS.AGEX_V == 1){
+    NEW_PS.MEM_V = 1;
+    LD_MEM       = 1;
+  }
+  else {
+    NEW_PS.MEM_V = 0;
+    LD_MEM       = 0;
+  } 
 
   if (LD_MEM) {
     /* Your code for latching into MEM latches goes here */
-    
+    NEW_PS.MEM_ADDRESS    = addressmux;
+    NEW_PS.MEM_NPC        = PS.AGEX_NPC;
+    NEW_PS.MEM_CC         = PS.AGEX_CC;
+    NEW_PS.MEM_ALU_RESULT = alu_resultmux;
+    NEW_PS.MEM_IR         = PS.AGEX_IR;
+    NEW_PS.MEM_DRID       = PS.AGEX_DRID;
 
     /* The code below propagates the control signals from AGEX.CS latch
      * to MEM.CS latch. */
