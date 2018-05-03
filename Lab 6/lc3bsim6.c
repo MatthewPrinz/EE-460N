@@ -949,24 +949,33 @@ void MEM_stage() {
   NEW_PS.SR_DRID       = PS.MEM_DRID;
 
   /* SR_V logic. */
-  
-
-  /* Also need is_cntrl_instr logic. */
-
+  if((v_mem_br_stall == 1) || (mem_stall == 1)){
+    NEW_PS.SR_V = 0;
+  }
+  else if((v_mem_br_stall == 1) || (mem_stall == 1)){
+    NEW_PS.SR_V = 1;
+  }
+  else {
+    NEW_PS.SR_V = 1;
+  }
 
   /* Here is where the br logic goes. */
-  MEM_PCMUX = 0;
+  MEM_PCMUX           = 0;
+  is_cntrl_instr_proc = 0;
   if(PS.MEM_V == 1){
     if(PS.MEM_CS[MEM_BR_OP] == 1){
       if((PS.MEM_CC & ((PS.MEM_IR & 0xE00) >> 9)) != 0){
         MEM_PCMUX = 1;
+        is_cntrl_instr_proc = 1;
       }
     }
     else if(PS.MEM_CS[MEM_UNCOND_OP] == 1){
       MEM_PCMUX = 1;
+      is_cntrl_instr_proc = 1;
     }
     else if(PS.MEM_CS[MEM_TRAP_OP] == 1){
       MEM_PCMUX = 2;
+      is_cntrl_instr_proc = 1;
     }
   }
 
@@ -1123,18 +1132,18 @@ void AGEX_stage() {
   }
 
   /* Next is the logic for MEM_V and LD_MEM. */
-  if((v_mem_br_stall == 1) || (mem_stall == 1)){
+  if((v_agex_br_stall == 1) && ( (v_mem_br_stall == 0) && (mem_stall == 0))){
+    NEW_PS.MEM_V = 0;
+    LD_MEM       = 0;
+  }
+  else if((v_mem_br_stall == 1) || (mem_stall == 1)){
     NEW_PS.MEM_V = 1;
     LD_MEM       = 0;
   }
-  else if(PS.AGEX_V == 1){
+  else {
     NEW_PS.MEM_V = 1;
     LD_MEM       = 1;
   }
-  else {
-    NEW_PS.MEM_V = 0;
-    LD_MEM       = 0;
-  } 
 
   if (LD_MEM) {
     /* Your code for latching into MEM latches goes here */
