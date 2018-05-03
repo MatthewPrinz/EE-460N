@@ -887,6 +887,58 @@ void MEM_stage() {
   int ii,jj = 0;
   
   /* your code for MEM stage goes here */
+  int v_dcache_en, en, data, we1, we0;
+  v_dcache_en = PS.MEM_CS[MEM_DCACHE_EN] & PS.MEM_V;
+  en          = v_dcache_en;
+  /* dcache data in logic. */
+  if(PS.MEM_CS[MEM_DATA_SIZE] == 0){ /* byte size */
+    if((PS.MEM_ADDRESS % 2) == 0){
+      data = PS.MEM_ALU_RESULT;
+    }
+    else {
+      data = PS.MEM_ALU_RESULT << 8;
+    }
+  }
+  else {
+    data = PS.MEM_ALU_RESULT;
+  }
+  
+  /* we logic */
+  we0 = 0;
+  we1 = 0;
+  if(PS.MEM_CS[MEM_DCACHE_RW] == 1){
+    if(PS.MEM_CS[MEM_DATA_SIZE] == 0){
+      if((PS.MEM_ADDRESS % 2) == 0){
+        we0 = 1;
+      }
+      else {
+        we1 = 1;
+      }
+    }
+    else {
+      we0 = 1;
+      we1 = 1;
+    }
+  }
+  
+  int read_word, dcache_r;
+  dcache_access(PS.MEM_ADDRESS, *read_word, data, *dcache_r, w0, w1);
+
+  mem_stall = (~dcache_r) & v_dcache_en;
+  TARGET_PC = PS.MEM_ADDRESS;
+
+  if(PS.MEM_CS[MEM_DATA_SIZE] == 0){
+    if((PS.MEM_ADDRESS % 2) == 0){
+      TRAP_PC = read_word & 0xFF;
+    }
+    else {
+      TRAP_PC = (read_word >> 8) & 0xFF;
+    }
+  }
+  else {
+    TRAP_PC = read_word;
+  }
+
   
  
   /* The code below propagates the control signals from MEM.CS latch
