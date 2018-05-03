@@ -890,6 +890,9 @@ void MEM_stage() {
   int v_dcache_en, en, data, we1, we0;
   v_dcache_en = PS.MEM_CS[MEM_DCACHE_EN] & PS.MEM_V;
   en          = v_dcache_en;
+
+  NEW_PS.SR_ADDRESS = PS.MEM_ADDRESS;
+
   /* dcache data in logic. */
   if(PS.MEM_CS[MEM_DATA_SIZE] == 0){ /* byte size */
     if((PS.MEM_ADDRESS % 2) == 0){
@@ -939,7 +942,40 @@ void MEM_stage() {
     TRAP_PC = read_word;
   }
 
+  NEW_PS.SR_DATA       = TRAP_PC;
+  NEW_PS.SR_NPC        = PS.MEM_NPC;
+  NEW_PS.SR_ALU_RESULT = PS.MEM_ALU_RESULT;
+  NEW_PS.SR_IR         = PS.MEM_IR;
+  NEW_PS.SR_DRID       = PS.MEM_DRID;
+
+  /* SR_V logic. */
   
+
+  /* Also need is_cntrl_instr logic. */
+
+
+  /* Here is where the br logic goes. */
+  MEM_PCMUX = 0;
+  if(PS.MEM_V == 1){
+    if(PS.MEM_CS[MEM_BR_OP] == 1){
+      if((PS.MEM_CC & ((PS.MEM_IR & 0xE00) >> 9)) != 0){
+        MEM_PCMUX = 1;
+      }
+    }
+    else if(PS.MEM_CS[MEM_UNCOND_OP] == 1){
+      MEM_PCMUX = 1;
+    }
+    else if(PS.MEM_CS[MEM_TRAP_OP] == 1){
+      MEM_PCMUX = 2;
+    }
+  }
+
+  /* Control signals to other stages logic. */
+  if(PS.MEM_V == 1){
+    v_mem_ld_cc    = PS.MEM_CS[MEM_LD_CC];
+    v_mem_ld_reg   = PS.MEM_CS[MEM_LD_REG];
+    v_mem_br_stall = PS.MEM_CS[MEM_BR_STALL];
+  }
  
   /* The code below propagates the control signals from MEM.CS latch
    * to SR.CS latch. You still need to latch other values into the
@@ -1080,9 +1116,11 @@ void AGEX_stage() {
   }
 
   /* Next is logic for v_agex_ld_cc, v_agex_ld_reg, v_agex_br_stall. */
-  v_agex_ld_cc    = PS.AGEX_CS[AGEX_LD_CC];
-  v_agex_ld_reg   = PS.AGEX_CS[AGEX_LD_REG];
-  v_agex_br_stall = PS.AGEX_CS[AGEX_BR_STALL] & PS.AGEX_V;
+  if(PS.AGEX_V == 1){
+    v_agex_ld_cc    = PS.AGEX_CS[AGEX_LD_CC];
+    v_agex_ld_reg   = PS.AGEX_CS[AGEX_LD_REG];
+    v_agex_br_stall = PS.AGEX_CS[AGEX_BR_STALL];
+  }
 
   /* Next is the logic for MEM_V and LD_MEM. */
   if((v_mem_br_stall == 1) || (mem_stall == 1)){
@@ -1192,21 +1230,19 @@ void DE_stage() {
     v_de_br_stall = 1;
   }
 
-  /* The logic for AGEX_V and LD_AGEX. 
-   * If there is a stall ahead in the pipeline then bubble be invalicating 
-   * and not loading. */
-  if((v_agex_br_stall == 1) || (v_mem_br_stall == 1) 
-                            || (mem_stall == 1)){
-    NEW_PS.AGEX_V = 1;
-    LD_AGEX       = 0;
-  }
-  else if(PS.DE_V == 1){
-    NEW_PS.AGEX_V = 1;
-    LD_AGEX       = 1;
-  }
-  else {
+  /* The logic for AGEX_V and LD_AGEX. */
+  if(((dep_stall == 1) || (v_de_br_stall == 1)) && ((v_agex_br_stall == 0) 
+                       && (v_mem_br_stall == 0) && (mem_stall == 0))){
     NEW_PS.AGEX_V = 0;
     LD_AGEX       = 0;
+  }
+  else if((v_agex_br_stall == 1) || (v_mem_br_stall == 1) || (mem_stall == 1)){
+    NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 0;
+  }
+  else {
+    NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 1;
   }
   
   if (LD_AGEX) {
@@ -1271,20 +1307,26 @@ void FETCH_stage() {
     PC = pc_mux
   }
 
-  if((icache_r == 0) && (dep_stall == 0) && (mem_stall == 0)){
+  if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0) 
+                     && (v_mem_br_stall == 0) && (mem_stall == 0)){
     de_v = 0;
   }
   else {
     de_v = 1;
   }
 
-  if((de_v == 0) || (dep_stall == 1) || (v_de_br_stall == 1) || (v_agex_br_stall == 1) 
-                 || (v_mem_br_stall == 1) || (mem_stall == 1)){
+  if(de_v == 0){
     LD_DE = 0;
     NEW_PS.DE_V = 0;
   }
+  else if((dep_stall == 1) || (v_de_br_stall == 1)  || (v_agex_br_stall == 1) 
+                           || (v_mem_br_stall == 1) || (mem_stall == 1)){
+    LD_DE = 0;
+    NEW_PS.DE_V = 1;
+  }
   else {
-    LE_DE = 1;
+    LD_DE = 1;
+    NEW_PS.DE_V = 1;
   }
 
   if(LD_DE == 1){
