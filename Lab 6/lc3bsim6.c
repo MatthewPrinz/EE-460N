@@ -848,6 +848,8 @@ void SR_stage() {
   /* You are given the code for SR_stage to get you started. Look at
    * the figure for SR stage to see how this code is implemented. */
   
+  /*printf("The value of DR.VALUEMUX is %d\n", Get_DR_VALUEMUX1(PS.SR_CS));*/
+
   switch (Get_DR_VALUEMUX1(PS.SR_CS)){
   case 0: 
     sr_reg_data = PS.SR_ADDRESS ;
@@ -867,6 +869,8 @@ void SR_stage() {
   v_sr_ld_reg = Get_SR_LD_REG(PS.SR_CS) & PS.SR_V;
   v_sr_ld_cc = Get_SR_LD_CC(PS.SR_CS) & PS.SR_V ;
 
+  /*printf("Value of sr_reg_data is %d\n", sr_reg_data);*/
+ 
   /* CC LOGIC  */
   sr_n = ((sr_reg_data & 0x8000) ? 1 : 0);
   sr_z = ((sr_reg_data & 0xFFFF) ? 0 : 1);
@@ -953,7 +957,8 @@ void MEM_stage() {
   NEW_PS.SR_DRID       = PS.MEM_DRID;
 
   /* SR_V logic. */
-  if(PS.MEM_V == 0){
+  /*printf("In MEM stage MEM_V is %d\n", PS.MEM_V);*/
+  if((PS.MEM_V == 0) && (v_mem_br_stall == 0) && (mem_stall == 0)){
     NEW_PS.SR_V = 0;
     NEW_PS.SR_DATA = 0;
   }
@@ -967,6 +972,7 @@ void MEM_stage() {
   /* Here is where the br logic goes. */
   MEM_PCMUX           = 0;
   is_cntrl_instr_proc = 0;
+  /*TARGET_PC = 0;*/
   if(PS.MEM_V == 1){
     if(PS.MEM_CS[MEM_BR_OP] == 1){
       if((PS.MEM_CC & ((PS.MEM_IR & 0xE00) >> 9)) != 0){
@@ -977,6 +983,10 @@ void MEM_stage() {
     else if(PS.MEM_CS[MEM_UNCOND_OP] == 1){
       MEM_PCMUX = 1;
       is_cntrl_instr_proc = 1;
+      if((PS.MEM_IR & 0xC000) == 0xC000){
+        TARGET_PC = REGS[(PS.MEM_IR & 0x01C0) >> 6];
+        /*printf("RET loaded TARGET.PC w/ R7\n");*/
+      }
     }
     else if(PS.MEM_CS[MEM_TRAP_OP] == 1){
       MEM_PCMUX = 2;
@@ -1022,7 +1032,7 @@ void AGEX_stage() {
   else {
     addr1mux = PS.AGEX_SR1;
   }
-  
+ 
   int addr2mux;
   int addr2mux_sel = (PS.AGEX_CS[AGEX_ADDR2MUX1] << 1) | PS.AGEX_CS[AGEX_ADDR2MUX0];
   switch(addr2mux_sel){
@@ -1030,7 +1040,7 @@ void AGEX_stage() {
       addr2mux = 0;
       break;
     case 1:
-      if((PS.AGEX_IR | 0x20) == 0x20){
+      if((PS.AGEX_IR & 0x20) == 0x20){
         addr2mux = (PS.AGEX_IR & 0x3F) | 0xFFFFFFC0;
       }
       else {
@@ -1038,15 +1048,18 @@ void AGEX_stage() {
       }
       break;
     case 2:
-      if((PS.AGEX_IR | 0x100) == 0x100){
+      printf("The PCoffset9 for this ir is %d\n", PS.AGEX_IR & 0x1FF);
+      if((PS.AGEX_IR & 0x100) == 0x100){
         addr2mux = (PS.AGEX_IR & 0x1FF) | 0xFFFFFE00;
+        /*addr2mux = -(PS.AGEX_IR & 0x1FF); */
+        printf("addr2mux loaded with neg val\n");
       }
       else {
         addr2mux =  PS.AGEX_IR & 0x1FF;
       }
       break;
     case 3:
-      if((PS.AGEX_IR | 0x400) == 0x400){
+      if((PS.AGEX_IR & 0x400) == 0x400){
         addr2mux = (PS.AGEX_IR & 0x7FF) | 0xFFFFF800;
       }
       else {
@@ -1057,13 +1070,19 @@ void AGEX_stage() {
 
   int lshf1 = 0;
   if(PS.AGEX_CS[AGEX_LSHF1] == 1){
-    lshf1 = addr2mux << 1;
+    /*lshf1 = addr2mux << 1;*/
+    lshf1 = addr2mux * 2;
   }
   else {
     lshf1 = addr2mux;
   }
 
   int adder = addr1mux + lshf1;
+
+  printf("addr2mux_sel is %d\n", addr2mux_sel);
+  printf("addr2mux before lshf1 is %d\n", addr2mux);
+  printf("addr2 side of adder is %d\n", lshf1);
+  printf("adder val is %d\n", adder);
 
   int addressmux;
   if(PS.AGEX_CS[AGEX_ADDRESSMUX] == 0){
@@ -1078,7 +1097,7 @@ void AGEX_stage() {
     sr2mux = PS.AGEX_SR2;
   }
   else {
-    if((PS.AGEX_IR && 0x10) == 0x10){
+    if((PS.AGEX_IR & 0x10) == 0x10){
       sr2mux = (PS.AGEX_IR & 0x1F) | 0xFFFFFFE0;
     }
     else {
@@ -1144,7 +1163,7 @@ void AGEX_stage() {
   }
 
   /* Next is the logic for MEM_V and LD_MEM. */
-  if(PS.AGEX_V == 0){
+  if((PS.AGEX_V == 0) && (mem_stall == 0)){
     NEW_PS.MEM_V = 0;
   }
   else if((v_agex_br_stall == 1) && (v_mem_br_stall == 0) && (mem_stall == 0)){
@@ -1193,7 +1212,7 @@ void DE_stage() {
   CONTROL_STORE_ADDRESS = ((PS.DE_IR & 0xF800) >> 10) | ((PS.DE_IR & 0x0020) >> 5);
   int SR1 = (PS.DE_IR & 0x01C0) >> 6;
   int SR2;
-  if((PS.DE_IR & 0x2000) == 0x2000){
+  if((PS.DE_IR & 0x20) == 0){
     SR2 = PS.DE_IR & 0x7;
   }
   else {
@@ -1201,6 +1220,7 @@ void DE_stage() {
   }
   if(v_sr_ld_reg == 1){
     REGS[sr_reg_id] = sr_reg_data & 0xFFFF;
+    printf("Reg %d loaded with val %d\n", sr_reg_id, sr_reg_data);
   }
   if(v_sr_ld_cc == 1){
     N = sr_n;
@@ -1267,8 +1287,12 @@ void DE_stage() {
     NEW_PS.AGEX_V = 1;
     LD_AGEX       = 1;
   }
-  else if((v_agex_br_stall == 1) || (v_mem_br_stall == 1) || (mem_stall == 1)){
+  else if((v_agex_br_stall == 1) || (v_mem_br_stall == 1)){
     NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 0;
+  }
+  else if(mem_stall == 1){
+    NEW_PS.AGEX_V = 0;
     LD_AGEX       = 0;
   }
   else {
@@ -1276,11 +1300,20 @@ void DE_stage() {
     LD_AGEX       = 1;
   }
   
+  int cc;
+  /*printf("V.SR.LD.CC is %d, SR.N is %d SR.Z is %d SR.P is %d\n", v_sr_ld_cc, sr_n, sr_z, sr_p);*/
+  if(v_sr_ld_cc == 0){
+    cc = (N << 2) | (Z << 1) | P;
+  }
+  else {
+    cc = (sr_n << 2) | (sr_z << 1) | sr_p;
+  }
+
   if (LD_AGEX) {
     /* Your code for latching into AGEX latches goes here */
     NEW_PS.AGEX_SR1  = REGS[SR1];
     NEW_PS.AGEX_SR2  = REGS[SR2];
-    NEW_PS.AGEX_CC   = (N << 2) | (Z << 1) | P;
+    NEW_PS.AGEX_CC   = cc;
     NEW_PS.AGEX_DRID = dr_mux;
     NEW_PS.AGEX_NPC  = PS.DE_NPC;
     NEW_PS.AGEX_IR   = PS.DE_IR;
@@ -1345,12 +1378,12 @@ void FETCH_stage() {
   if(de_v == 0){
     LD_DE = 1;
   }
-  else if(dep_stall == 1){
+  else if((dep_stall == 1) || (mem_stall == 1)){
     LD_DE = 0;
     de_v  = 1;
   }
   else if((v_de_br_stall == 1)  || (v_agex_br_stall == 1) 
-       || (v_mem_br_stall == 1) || (mem_stall == 1)){
+       || (v_mem_br_stall == 1)){
     LD_DE = 0;
     de_v = 0;
   }
@@ -1364,10 +1397,12 @@ void FETCH_stage() {
   if(LD_DE == 1){
     NEW_PS.DE_NPC = PC + 2;
     NEW_PS.DE_IR  = de_ir;
+    printf("Instruction opcode to be decoded is %d\n", (de_ir & 0xF000) >> 12);
   }
 
   if(LD_PC == 1){
     PC = pc_mux;
+    printf("PC loaded with val %d\n", PC);
   }
 }
 
