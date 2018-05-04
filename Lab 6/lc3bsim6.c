@@ -1025,7 +1025,7 @@ void AGEX_stage() {
   
   int addr2mux;
   int addr2mux_sel = (PS.AGEX_CS[AGEX_ADDR2MUX1] << 1) | PS.AGEX_CS[AGEX_ADDR2MUX0];
-  switch(addr2mux){
+  switch(addr2mux_sel){
     case 0:
       addr2mux = 0;
       break;
@@ -1055,7 +1055,7 @@ void AGEX_stage() {
       break;
   }
 
-  int lshf1;
+  int lshf1 = 0;
   if(PS.AGEX_CS[AGEX_LSHF1] == 1){
     lshf1 = addr2mux << 1;
   }
@@ -1063,7 +1063,7 @@ void AGEX_stage() {
     lshf1 = addr2mux;
   }
 
-  int adder = addr1mux + addr2mux;
+  int adder = addr1mux + lshf1;
 
   int addressmux;
   if(PS.AGEX_CS[AGEX_ADDRESSMUX] == 0){
@@ -1258,8 +1258,12 @@ void DE_stage() {
     NEW_PS.AGEX_V = 0;
     LD_AGEX       = 1;
   }
-  else if(((dep_stall == 1) || (v_de_br_stall == 1)) && ((v_agex_br_stall == 0) 
-                       && (v_mem_br_stall == 0) && (mem_stall == 0))){
+  else if(dep_stall == 1){
+    NEW_PS.AGEX_V = 0;
+    LD_AGEX       = 0;
+  }
+  else if((v_de_br_stall  == 1) && ((v_agex_br_stall == 0) 
+       && (v_mem_br_stall == 0) && (mem_stall == 0))){
     NEW_PS.AGEX_V = 1;
     LD_AGEX       = 1;
   }
@@ -1322,8 +1326,8 @@ void FETCH_stage() {
   /*if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0) 
    && (v_de_br_stall == 0) && (v_agex_br_stall == 0)      && (v_mem_br_stall == 0) 
    && (mem_stall == 0))){*/
-  if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0)  
-   && (mem_stall == 0))){
+  if(((icache_r == 1) || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0)  
+   && (mem_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0))){
     LD_PC = 1;
   }
   else {
@@ -1341,8 +1345,12 @@ void FETCH_stage() {
   if(de_v == 0){
     LD_DE = 1;
   }
-  else if((dep_stall == 1) || (v_de_br_stall == 1)  || (v_agex_br_stall == 1) 
-                           || (v_mem_br_stall == 1) || (mem_stall == 1)){
+  else if(dep_stall == 1){
+    LD_DE = 0;
+    de_v  = 1;
+  }
+  else if((v_de_br_stall == 1)  || (v_agex_br_stall == 1) 
+       || (v_mem_br_stall == 1) || (mem_stall == 1)){
     LD_DE = 0;
     de_v = 0;
   }
