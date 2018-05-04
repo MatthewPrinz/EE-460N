@@ -939,11 +939,13 @@ void MEM_stage() {
     }
     if((TRAP_PC & 0x80) == 0x80){
       TRAP_PC = TRAP_PC | 0xFFFFFF00;
+    }
   }
   else {
     TRAP_PC = read_word;
   }
-
+  
+  TRAP_PC              = TRAP_PC & 0xFFFF;
   NEW_PS.SR_DATA       = TRAP_PC;
   NEW_PS.SR_NPC        = PS.MEM_NPC;
   NEW_PS.SR_ALU_RESULT = PS.MEM_ALU_RESULT;
@@ -951,11 +953,12 @@ void MEM_stage() {
   NEW_PS.SR_DRID       = PS.MEM_DRID;
 
   /* SR_V logic. */
-  if((v_mem_br_stall == 1) || (mem_stall == 1)){
+  if(PS.MEM_V == 0){
     NEW_PS.SR_V = 0;
+    NEW_PS.SR_DATA = 0;
   }
   else if((v_mem_br_stall == 1) || (mem_stall == 1)){
-    NEW_PS.SR_V = 1;
+    NEW_PS.SR_V = 0;
   }
   else {
     NEW_PS.SR_V = 1;
@@ -982,6 +985,9 @@ void MEM_stage() {
   }
 
   /* Control signals to other stages logic. */
+  v_mem_ld_cc    = 0;
+  v_mem_ld_reg   = 0;
+  v_mem_br_stall = 0;
   if(PS.MEM_V == 1){
     v_mem_ld_cc    = PS.MEM_CS[MEM_LD_CC];
     v_mem_ld_reg   = PS.MEM_CS[MEM_LD_REG];
@@ -1128,6 +1134,9 @@ void AGEX_stage() {
   }
 
   /* Next is logic for v_agex_ld_cc, v_agex_ld_reg, v_agex_br_stall. */
+  v_agex_ld_cc    = 0;
+  v_agex_ld_reg   = 0;
+  v_agex_br_stall = 0; 
   if(PS.AGEX_V == 1){
     v_agex_ld_cc    = PS.AGEX_CS[AGEX_LD_CC];
     v_agex_ld_reg   = PS.AGEX_CS[AGEX_LD_REG];
@@ -1135,9 +1144,12 @@ void AGEX_stage() {
   }
 
   /* Next is the logic for MEM_V and LD_MEM. */
-  if((v_agex_br_stall == 1) && ( (v_mem_br_stall == 0) && (mem_stall == 0))){
+  if(PS.AGEX_V == 0){
     NEW_PS.MEM_V = 0;
-    LD_MEM       = 0;
+  }
+  else if((v_agex_br_stall == 1) && (v_mem_br_stall == 0) && (mem_stall == 0)){
+    NEW_PS.MEM_V = 1;
+    LD_MEM       = 1;
   }
   else if((v_mem_br_stall == 1) || (mem_stall == 1)){
     NEW_PS.MEM_V = 1;
@@ -1201,10 +1213,11 @@ void DE_stage() {
   else {
     dr_mux = 7;
   }
+
   /* Dependency check logic. */
   dep_stall = 0;
   if(PS.DE_V == 0){
-    dep_stall = 1;
+    dep_stall = 0;
   }
   else {
     if((CONTROL_STORE[CONTROL_STORE_ADDRESS][SR1_NEEDED] == 1) 
@@ -1235,15 +1248,20 @@ void DE_stage() {
   /* Next is the BR_STALL logic. */
   /* If the instruction is control instruction (BR_STALL == 1) and DE_V == 1 
    * (the instruction is valid) assert v_de_br_stall. */
+  v_de_br_stall = 0;
   if((CONTROL_STORE[CONTROL_STORE_ADDRESS][BR_STALL] == 1) && (PS.DE_V == 1)){
     v_de_br_stall = 1;
   }
 
   /* The logic for AGEX_V and LD_AGEX. */
-  if(((dep_stall == 1) || (v_de_br_stall == 1)) && ((v_agex_br_stall == 0) 
-                       && (v_mem_br_stall == 0) && (mem_stall == 0))){
+  if(PS.DE_V == 0){
     NEW_PS.AGEX_V = 0;
-    LD_AGEX       = 0;
+    LD_AGEX       = 1;
+  }
+  else if(((dep_stall == 1) || (v_de_br_stall == 1)) && ((v_agex_br_stall == 0) 
+                       && (v_mem_br_stall == 0) && (mem_stall == 0))){
+    NEW_PS.AGEX_V = 1;
+    LD_AGEX       = 1;
   }
   else if((v_agex_br_stall == 1) || (v_mem_br_stall == 1) || (mem_stall == 1)){
     NEW_PS.AGEX_V = 1;
@@ -1301,17 +1319,15 @@ void FETCH_stage() {
   }
 
   /* Perform logic for the load signals. */
-  if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0) 
+  /*if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0) 
    && (v_de_br_stall == 0) && (v_agex_br_stall == 0)      && (v_mem_br_stall == 0) 
+   && (mem_stall == 0))){*/
+  if(((icache_r == 1)      || (is_cntrl_instr_proc == 1)) && ((dep_stall == 0)  
    && (mem_stall == 0))){
     LD_PC = 1;
   }
   else {
     LD_PC = 0;
-  }
-
-  if(LD_PC == 1){
-    PC = pc_mux;
   }
 
   if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0) 
@@ -1323,23 +1339,27 @@ void FETCH_stage() {
   }
 
   if(de_v == 0){
-    LD_DE = 0;
-    NEW_PS.DE_V = 0;
+    LD_DE = 1;
   }
   else if((dep_stall == 1) || (v_de_br_stall == 1)  || (v_agex_br_stall == 1) 
                            || (v_mem_br_stall == 1) || (mem_stall == 1)){
     LD_DE = 0;
-    NEW_PS.DE_V = 1;
+    de_v = 0;
   }
   else {
     LD_DE = 1;
-    NEW_PS.DE_V = 1;
+    de_v = 1;
   }
+
+  NEW_PS.DE_V = de_v;
 
   if(LD_DE == 1){
     NEW_PS.DE_NPC = PC + 2;
     NEW_PS.DE_IR  = de_ir;
-    NEW_PS.DE_V   = de_v;
+  }
+
+  if(LD_PC == 1){
+    PC = pc_mux;
   }
 }
 
