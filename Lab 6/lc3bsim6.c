@@ -925,7 +925,7 @@ void MEM_stage() {
   }
   
   int read_word, dcache_r;
-  dcache_access(PS.MEM_ADDRESS, *read_word, data, *dcache_r, w0, w1);
+  dcache_access(PS.MEM_ADDRESS, &read_word, data, &dcache_r, we0, we1);
 
   mem_stall = (~dcache_r) & v_dcache_en;
   TARGET_PC = PS.MEM_ADDRESS;
@@ -937,6 +937,8 @@ void MEM_stage() {
     else {
       TRAP_PC = (read_word >> 8) & 0xFF;
     }
+    if((TRAP_PC & 0x80) == 0x80){
+      TRAP_PC = TRAP_PC | 0xFFFFFF00;
   }
   else {
     TRAP_PC = read_word;
@@ -1019,7 +1021,7 @@ void AGEX_stage() {
   int addr2mux_sel = (PS.AGEX_CS[AGEX_ADDR2MUX1] << 1) | PS.AGEX_CS[AGEX_ADDR2MUX0];
   switch(addr2mux){
     case 0:
-      addr2mux = 0
+      addr2mux = 0;
       break;
     case 1:
       if((PS.AGEX_IR | 0x20) == 0x20){
@@ -1078,18 +1080,18 @@ void AGEX_stage() {
     }
   }
   
-  int SHF, shf_sel;
+  int SHF, shf_sel, sr15;
   shf_sel = ((PS.AGEX_IR & 0x20) >> 4) | ((PS.AGEX_IR & 0x10) >> 4);
   switch(shf_sel){
     case 0:
-      SHF = AGEX_SR1 << (PS.AGEX_IR & 0xF);
+      SHF = PS.AGEX_SR1 << (PS.AGEX_IR & 0xF);
       break;
     case 1:
-      SHF = AGEX_SR1 >> (PS.AGEX_IR & 0xF);
+      SHF = PS.AGEX_SR1 >> (PS.AGEX_IR & 0xF);
       break;
     case 2:
-      int sr15 = AGEX_SR1 & 0x8000;
-      SHF = (AGEX_SR1 >> (PS.AGEX_IR & 0xF)) | sr15;
+      sr15 = PS.AGEX_SR1 & 0x8000;
+      SHF = (PS.AGEX_SR1 >> (PS.AGEX_IR & 0xF)) | sr15;
       break;
   }
   
@@ -1115,7 +1117,8 @@ void AGEX_stage() {
     case 3:
       ALU = B;
       break;
-  
+  }
+ 
   int alu_resultmux;
   if(PS.AGEX_CS[AGEX_ALU_RESULTMUX] == 0){
     alu_resultmux = SHF;
@@ -1209,19 +1212,16 @@ void DE_stage() {
       if(v_agex_ld_reg == 1){
         if((SR1 == PS.AGEX_DRID) || (SR2 == PS.AGEX_DRID)){
           dep_stall = 1;
-          break;
         }
       }
       if(v_mem_ld_reg == 1){
         if((SR1 == PS.MEM_DRID) || (SR2 == PS.MEM_DRID)){
           dep_stall = 1;
-          break;
         }
       }
       if(v_sr_ld_reg == 1){
         if((SR1 == PS.SR_DRID) || (SR2 == PS.SR_DRID)){
           dep_stall = 1;
-          break;
         }
       }
     }
@@ -1285,7 +1285,7 @@ void FETCH_stage() {
   /* Read the I-Cache, if ready ICACHE.R signal is asserted,
    * if the I-Cache is not ready the logic needs to stall the pipeline.
    */
-  icache_access(PC, *de_ir, *icache_r);
+  icache_access(PC, &de_ir, &icache_r);
 
   /* Compute the value of the PCMUX. */
   switch(MEM_PCMUX){
@@ -1307,11 +1307,11 @@ void FETCH_stage() {
     LD_PC = 1;
   }
   else {
-    LD_PC = 0
+    LD_PC = 0;
   }
 
   if(LD_PC == 1){
-    PC = pc_mux
+    PC = pc_mux;
   }
 
   if((icache_r == 0) && (dep_stall == 0) && (v_de_br_stall == 0) && (v_agex_br_stall == 0) 
